@@ -1,4 +1,5 @@
-
+import { Routes, Route, Navigate } from 'react-router-dom';
+import Admin from './Admin';
 import { useEffect, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -6,62 +7,46 @@ import {
   faTiktok,
   faFacebookF,
 } from '@fortawesome/free-brands-svg-icons';
-
 import { supabase } from './supabase';
 import './App.css';
 
 const STORE_NAME = 'VoltBridge Technologies';
 const WHATSAPP_NUMBER = '254726147462';
+const STORE_ADDRESS = 'Bihi Tower, 4th Floor, Suite 5, Nairobi, Kenya';
 
-const SOCIAL_LINKS = [
-  {
-    name: 'Instagram',
-    url: 'https://www.instagram.com/voltbridgetechnologies/',
-    icon: faInstagram,
-    className: 'instagram',
-  },
-  {
-    name: 'TikTok',
-    url: 'https://www.tiktok.com/@voltbridgetechnologies',
-    icon: faTiktok,
-    className: 'tiktok',
-  },
-  {
-    name: 'Facebook',
-    url: 'https://www.facebook.com/voltbridgetechnologies/',
-    icon: faFacebookF,
-    className: 'facebook',
-  },
-];
+const SOCIAL_LINKS = {
+  instagram: 'https://www.instagram.com/voltbridgetechnologies/',
+  tiktok: 'https://www.tiktok.com/@voltbridgetechnologies',
+  facebook: 'https://www.facebook.com/voltbridgetechnologies/',
+};
 
 const CATEGORIES = [
+  'All Products',
   'Gaming Devices',
   'Samsung Chargers',
   'Apple Accessories',
 ];
 
-function formatPrice(value) {
-  return new Intl.NumberFormat('en-KE', {
-    style: 'currency',
-    currency: 'KES',
-    maximumFractionDigits: 0,
-  }).format(Number(value) || 0);
+function formatPrice(price) {
+  return `KSh ${Number(price || 0).toLocaleString('en-KE')}`;
 }
 
 function getPrice(product) {
-  const regularPrice = Number(product.price) || 0;
-  const salePrice = Number(product.sale_price) || 0;
+  const price = Number(product?.price || 0);
+  const salePrice = Number(product?.sale_price || 0);
 
-  return salePrice > 0 && salePrice < regularPrice
-    ? salePrice
-    : regularPrice;
+  return salePrice > 0 && salePrice < price ? salePrice : price;
 }
 
 function hasDiscount(product) {
-  const regularPrice = Number(product.price) || 0;
-  const salePrice = Number(product.sale_price) || 0;
+  const price = Number(product?.price || 0);
+  const salePrice = Number(product?.sale_price || 0);
 
-  return salePrice > 0 && salePrice < regularPrice;
+  return salePrice > 0 && salePrice < price;
+}
+
+function isInStock(product) {
+  return Number(product?.stock_quantity || 0) > 0;
 }
 
 function whatsappLink(message) {
@@ -71,87 +56,109 @@ function whatsappLink(message) {
 function SocialLinks() {
   return (
     <div className="social-links">
-      {SOCIAL_LINKS.map((social) => (
-        <a
-          key={social.name}
-          href={social.url}
-          className={`social-link ${social.className}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={`Visit ${STORE_NAME} on ${social.name}`}
-          title={social.name}
-        >
-          <FontAwesomeIcon icon={social.icon} />
-        </a>
-      ))}
+      <a
+        href={SOCIAL_LINKS.instagram}
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Instagram"
+      >
+        <FontAwesomeIcon icon={faInstagram} />
+      </a>
+
+      <a
+        href={SOCIAL_LINKS.tiktok}
+        target="_blank"
+        rel="noreferrer"
+        aria-label="TikTok"
+      >
+        <FontAwesomeIcon icon={faTiktok} />
+      </a>
+
+      <a
+        href={SOCIAL_LINKS.facebook}
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Facebook"
+      >
+        <FontAwesomeIcon icon={faFacebookF} />
+      </a>
     </div>
   );
 }
 
-function ProductCard({ product, onView, onAddToCart }) {
+function ProductCard({ product, onViewDetails, onAddToCart }) {
   const discounted = hasDiscount(product);
-  const inStock = Number(product.stock_quantity) > 0;
+  const available = isInStock(product);
 
   return (
     <article className="product-card">
       <button
         type="button"
         className="product-image-button"
-        onClick={() => onView(product)}
+        onClick={() => onViewDetails(product)}
         aria-label={`View ${product.name}`}
       >
-        {product.image_url ? (
-          <img
-            className="product-image"
-            src={product.image_url}
-            alt={product.name}
-            loading="lazy"
-          />
-        ) : (
-          <div className="image-placeholder">
-            <span>No image available</span>
-          </div>
-        )}
+        <div className="product-image">
+          {product.image_url ? (
+            <img
+              src={product.image_url}
+              alt={product.name}
+              loading="lazy"
+            />
+          ) : (
+            <div className="product-placeholder">
+              <span>VB</span>
+              <small>VoltBridge</small>
+            </div>
+          )}
 
-        {discounted && <span className="sale-badge">SALE</span>}
+          {discounted && <span className="sale-badge">SALE</span>}
+
+          {!available && (
+            <span className="out-of-stock-badge">Out of Stock</span>
+          )}
+        </div>
       </button>
 
-      <div className="product-card-content">
-        <p className="product-category">{product.category}</p>
+      <div className="product-info">
+        <span className="product-category">
+          {product.category || 'Accessories'}
+        </span>
 
-        <button
-          type="button"
-          className="product-title-button"
-          onClick={() => onView(product)}
-        >
-          {product.name}
-        </button>
+        <h3>{product.name}</h3>
 
-        <div className="product-prices">
-          <span className="product-price">
-            {formatPrice(getPrice(product))}
-          </span>
+        <div className="product-pricing">
+          <span className="current-price">{formatPrice(getPrice(product))}</span>
 
           {discounted && (
-            <span className="old-price">
+            <span className="original-price">
               {formatPrice(product.price)}
             </span>
           )}
         </div>
 
-        <p className={`stock-status ${inStock ? 'in-stock' : 'out-of-stock'}`}>
-          <span className="stock-dot" />
-          {inStock ? 'In Stock' : 'Out of Stock'}
+        <p className={available ? 'stock-status in-stock' : 'stock-status out'}>
+          {available ? 'In Stock' : 'Out of Stock'}
         </p>
 
-        <button
-          type="button"
-          className="button button-primary add-to-cart-button"
-          disabled={!inStock}
-          onClick={() => onAddToCart(product)}
-        >
-          {inStock ? 'Add to Cart' : 'Out of Stock'}
-        </button>
+        <div className="product-actions">
+          <button
+            type="button"
+            className="details-button"
+            onClick={() => onViewDetails(product)}
+          >
+            View Details
+          </button>
+
+          <button
+            type="button"
+            className="add-to-cart-button"
+            disabled={!available}
+            onClick={() => onAddToCart(product)}
+          >
+            {available ? 'Add to Cart' : 'Unavailable'}
+          </button>
+        </div>
       </div>
     </article>
   );
@@ -161,26 +168,15 @@ function ProductDetails({ product, onClose, onAddToCart }) {
   if (!product) return null;
 
   const discounted = hasDiscount(product);
-  const inStock = Number(product.stock_quantity) > 0;
-
-  function handleAdd() {
-    if (!inStock) return;
-
-    onAddToCart(product);
-    onClose();
-  }
+  const available = isInStock(product);
 
   return (
-    <div
-      className="modal-overlay"
-      onClick={onClose}
-      role="presentation"
-    >
+    <div className="modal-overlay" onClick={onClose}>
       <section
-        className="product-modal"
+        className="product-details-modal"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="modal-product-title"
+        aria-label={product.name}
         onClick={(event) => event.stopPropagation()}
       >
         <button
@@ -192,62 +188,68 @@ function ProductDetails({ product, onClose, onAddToCart }) {
           ×
         </button>
 
-        <div className="modal-image-wrap">
+        <div className="details-image">
           {product.image_url ? (
-            <img
-              src={product.image_url}
-              alt={product.name}
-              className="modal-product-image"
-            />
+            <img src={product.image_url} alt={product.name} />
           ) : (
-            <div className="image-placeholder">
-              No image available
+            <div className="product-placeholder">
+              <span>VB</span>
+              <small>VoltBridge</small>
             </div>
           )}
         </div>
 
-        <div className="modal-product-info">
-          <p className="product-category">{product.category}</p>
-          <h2 id="modal-product-title">{product.name}</h2>
+        <div className="details-content">
+          <span className="product-category">
+            {product.category || 'Accessories'}
+          </span>
 
-          <div className="product-prices">
-            <span className="product-price">
-              {formatPrice(getPrice(product))}
-            </span>
+          <h2>{product.name}</h2>
+
+          <div className="product-pricing details-pricing">
+            <span className="current-price">{formatPrice(getPrice(product))}</span>
 
             {discounted && (
-              <span className="old-price">
+              <span className="original-price">
                 {formatPrice(product.price)}
               </span>
             )}
           </div>
 
-          <p className={`stock-status ${inStock ? 'in-stock' : 'out-of-stock'}`}>
-            <span className="stock-dot" />
-            {inStock ? 'In Stock' : 'Out of Stock'}
+          {discounted && (
+            <p className="discount-message">Special offer available!</p>
+          )}
+
+          <p className={available ? 'stock-status in-stock' : 'stock-status out'}>
+            {available ? 'In Stock' : 'Out of Stock'}
           </p>
 
-          <p className="modal-description">
-            {product.description ||
-              'Contact us on WhatsApp for more information about this product.'}
+          <p className="product-description">
+            {product.description || 'Contact us for more product information.'}
           </p>
 
-          <button
-            type="button"
-            className="button button-primary"
-            disabled={!inStock}
-            onClick={handleAdd}
-          >
-            {inStock ? 'Add to Cart' : 'Out of Stock'}
-          </button>
+          {available && (
+            <button
+              type="button"
+              className="add-to-cart-button details-add-button"
+              onClick={() => {
+                onAddToCart(product);
+                onClose();
+              }}
+            >
+              Add to Cart
+            </button>
+          )}
 
           <a
-            className="button button-outline modal-whatsapp"
-            href={whatsappLink(`Hello ${STORE_NAME}, I would like to enquire about ${product.name}.`)}
+            className="whatsapp-product-link"
+            href={whatsappLink(
+              `Hello ${STORE_NAME}, I would like to enquire about ${product.name}.`
+            )}
             target="_blank"
-            rel="noopener noreferrer"
+            rel="noreferrer"
           >
-            Ask About This Product
+            Ask about this product on WhatsApp
           </a>
         </div>
       </section>
@@ -255,212 +257,186 @@ function ProductDetails({ product, onClose, onAddToCart }) {
   );
 }
 
-function ShoppingCart({ cart, products, onUpdateQuantity, onRemove, onClear }) {
-  const subtotal = cart.reduce(
-    (total, item) => total + getPrice(item) * item.quantity,
+function ShoppingCart({
+  isOpen,
+  onClose,
+  cart,
+  onIncrease,
+  onDecrease,
+  onRemove,
+}) {
+  if (!isOpen) return null;
+
+  const total = cart.reduce(
+    (sum, item) => sum + getPrice(item) * item.quantity,
     0
   );
 
-  function checkoutOnWhatsApp() {
-    if (cart.length === 0) return;
-
-    const productLines = cart.map((item) => {
-      const lineTotal = getPrice(item) * item.quantity;
-
-      return [
-        `• ${item.name}`,
-        `  Quantity: ${item.quantity}`,
-        `  Unit price: ${formatPrice(getPrice(item))}`,
-        `  Line total: ${formatPrice(lineTotal)}`,
-      ].join('\n');
-    });
-
-    const message = [
-      `Hello ${STORE_NAME}, I would like to place an order:`,
-      '',
-      ...productLines,
-      '',
-      `Subtotal: ${formatPrice(subtotal)}`,
-      '',
-      'Please confirm availability, delivery charges, and payment options.',
-    ].join('\n');
-
-    window.open(whatsappLink(message), '_blank', 'noopener,noreferrer');
-  }
+  const orderMessage = [
+    `Hello ${STORE_NAME}, I would like to place an order:`,
+    '',
+    ...cart.map(
+      (item) =>
+        `${item.name} x ${item.quantity} - ${formatPrice(
+          getPrice(item) * item.quantity
+        )}`
+    ),
+    '',
+    `Total: ${formatPrice(total)}`,
+    '',
+    'Please confirm availability and delivery details.',
+  ].join('\n');
 
   return (
-    <section id="cart" className="cart-section section">
-      <div className="section-heading">
-        <p className="eyebrow">YOUR SELECTION</p>
-        <h2>Shopping Cart</h2>
-        <p>Review your items before ordering through WhatsApp.</p>
-      </div>
+    <div className="cart-overlay" onClick={onClose}>
+      <aside
+        className="shopping-cart"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Shopping cart"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="cart-header">
+          <h2>Your Cart</h2>
 
-      {cart.length === 0 ? (
-        <div className="empty-cart">
-          <div className="empty-cart-icon">🛒</div>
-          <h3>Your cart is waiting</h3>
-          <p>Add a few products to get started.</p>
-          <a className="button button-primary" href="#shop">
-            Browse Products
-          </a>
+          <button
+            type="button"
+            className="modal-close"
+            onClick={onClose}
+            aria-label="Close cart"
+          >
+            ×
+          </button>
         </div>
-      ) : (
-        <div className="cart-layout">
-          <div className="cart-items">
-            {cart.map((item) => {
-              const currentProduct = products.find(
-                (product) => product.id === item.id
-              );
 
-              const availableStock = Number(
-                currentProduct?.stock_quantity ?? item.stock_quantity
-              );
+        {cart.length === 0 ? (
+          <div className="empty-cart">
+            <p>Your cart is empty.</p>
 
-              return (
-                <article className="cart-item" key={item.id}>
-                  {item.image_url ? (
-                    <img
-                      src={item.image_url}
-                      alt={item.name}
-                      className="cart-item-image"
-                    />
-                  ) : (
-                    <div className="cart-item-image image-placeholder">
-                      No image
-                    </div>
-                  )}
+            <button type="button" onClick={onClose}>
+              Continue Shopping
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="cart-items">
+              {cart.map((item) => (
+                <div className="cart-item" key={item.id}>
+                  <div className="cart-item-image">
+                    {item.image_url ? (
+                      <img src={item.image_url} alt={item.name} />
+                    ) : (
+                      <span>VB</span>
+                    )}
+                  </div>
 
                   <div className="cart-item-info">
-                    <p className="product-category">{item.category}</p>
                     <h3>{item.name}</h3>
+                    <p>{formatPrice(getPrice(item))}</p>
 
-                    <p className="cart-unit-price">
-                      {formatPrice(getPrice(item))} each
-                    </p>
+                    <div className="quantity-controls">
+                      <button
+                        type="button"
+                        onClick={() => onDecrease(item.id)}
+                        aria-label={`Decrease quantity of ${item.name}`}
+                      >
+                        −
+                      </button>
 
-                    <div className="cart-item-bottom">
-                      <div className="quantity-controls">
-                        <button
-                          type="button"
-                          aria-label={`Decrease quantity of ${item.name}`}
-                          disabled={item.quantity <= 1}
-                          onClick={() =>
-                            onUpdateQuantity(item.id, item.quantity - 1)
-                          }
-                        >
-                          −
-                        </button>
-
-                        <span>{item.quantity}</span>
-
-                        <button
-                          type="button"
-                          aria-label={`Increase quantity of ${item.name}`}
-                          disabled={item.quantity >= availableStock}
-                          onClick={() =>
-                            onUpdateQuantity(item.id, item.quantity + 1)
-                          }
-                        >
-                          +
-                        </button>
-                      </div>
+                      <span>{item.quantity}</span>
 
                       <button
                         type="button"
-                        className="remove-item-button"
-                        onClick={() => onRemove(item.id)}
+                        onClick={() => onIncrease(item.id)}
+                        aria-label={`Increase quantity of ${item.name}`}
+                        disabled={
+                          item.quantity >= Number(item.stock_quantity || 0)
+                        }
                       >
-                        Remove
+                        +
                       </button>
                     </div>
+
+                    <button
+                      type="button"
+                      className="remove-item"
+                      onClick={() => onRemove(item.id)}
+                    >
+                      Remove
+                    </button>
                   </div>
-
-                  <strong className="cart-line-total">
-                    {formatPrice(getPrice(item) * item.quantity)}
-                  </strong>
-                </article>
-              );
-            })}
-          </div>
-
-          <aside className="cart-summary">
-            <h3>Order Summary</h3>
-
-            <div className="summary-row">
-              <span>Items</span>
-              <span>
-                {cart.reduce((total, item) => total + item.quantity, 0)}
-              </span>
+                </div>
+              ))}
             </div>
 
-            <div className="summary-row summary-total">
-              <span>Subtotal</span>
-              <strong>{formatPrice(subtotal)}</strong>
+            <div className="cart-footer">
+              <div className="cart-total">
+                <span>Total</span>
+                <strong>{formatPrice(total)}</strong>
+              </div>
+
+              <a
+                className="checkout-button"
+                href={whatsappLink(orderMessage)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Order via WhatsApp
+              </a>
+
+              <p className="checkout-note">
+                We will confirm availability, delivery and payment with you.
+              </p>
             </div>
-
-            <p className="delivery-note">
-              Delivery charges and final availability will be confirmed
-              on WhatsApp.
-            </p>
-
-            <button
-              type="button"
-              className="button button-whatsapp checkout-button"
-              onClick={checkoutOnWhatsApp}
-            >
-              Order on WhatsApp
-            </button>
-
-            <button
-              type="button"
-              className="clear-cart-button"
-              onClick={onClear}
-            >
-              Clear Cart
-            </button>
-          </aside>
-        </div>
-      )}
-    </section>
+          </>
+        )}
+      </aside>
+    </div>
   );
 }
 
-function App() {
+function Storefront() {
   const [products, setProducts] = useState([]);
-  const [cart, setCart] = useState([]);
-  const [selectedProduct, setSelectedProduct] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [activeCategory, setActiveCategory] = useState('All');
+  const [fetchError, setFetchError] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('All Products');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [cart, setCart] = useState([]);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
 
     async function loadProducts() {
       setLoading(true);
-      setError('');
+      setFetchError('');
 
-      const { data, error: fetchError } = await supabase
-        .from('products')
-        .select(
-          'id, name, description, category, price, sale_price, stock_quantity, image_url, created_at'
-        )
-        .eq('is_active', true)
-        .gt('price', 0)
-        .order('created_at', { ascending: false });
+      try {
+        const { data, error } = await supabase
+          .from('products')
+          .select(
+            'id, name, description, category, price, sale_price, stock_quantity, image_url, created_at'
+          )
+          .eq('is_active', true)
+          .gt('price', 0)
+          .order('created_at', { ascending: false });
 
-      if (!isMounted) return;
+        if (error) throw error;
 
-      if (fetchError) {
-        console.error('Error loading products:', fetchError);
-        setError('We could not load products. Please try again.');
-        setProducts([]);
-      } else {
-        setProducts(data || []);
+        if (isMounted) setProducts(data || []);
+      } catch (error) {
+        console.error('Unable to load products:', error);
+
+        if (isMounted) {
+          setFetchError(
+            'We could not load products right now. Please refresh the page or contact us on WhatsApp.'
+          );
+        }
+      } finally {
+        if (isMounted) setLoading(false);
       }
-
-      setLoading(false);
     }
 
     loadProducts();
@@ -471,26 +447,16 @@ function App() {
   }, []);
 
   function addToCart(product) {
-    const stock = Number(product.stock_quantity) || 0;
-
-    if (stock <= 0) {
-      window.alert('Sorry, this product is currently out of stock.');
-      return;
-    }
-
-    const existingItem = cart.find((item) => item.id === product.id);
-
-    if (existingItem && existingItem.quantity >= stock) {
-      window.alert('You have reached the available stock for this product.');
-      return;
-    }
+    if (!isInStock(product)) return;
 
     setCart((currentCart) => {
-      const itemAlreadyAdded = currentCart.find(
-        (item) => item.id === product.id
-      );
+      const existing = currentCart.find((item) => item.id === product.id);
 
-      if (itemAlreadyAdded) {
+      if (existing) {
+        if (existing.quantity >= Number(product.stock_quantity || 0)) {
+          return currentCart;
+        }
+
         return currentCart.map((item) =>
           item.id === product.id
             ? { ...item, quantity: item.quantity + 1 }
@@ -500,27 +466,31 @@ function App() {
 
       return [...currentCart, { ...product, quantity: 1 }];
     });
+
+    setCartOpen(true);
   }
 
-  function updateQuantity(productId, newQuantity) {
-    if (newQuantity < 1) return;
-
-    const product = products.find((item) => item.id === productId);
-    if (!product) return;
-
-    const stock = Number(product.stock_quantity) || 0;
-
-    if (newQuantity > stock) {
-      window.alert('You have reached the available stock for this product.');
-      return;
-    }
-
+  function increaseQuantity(productId) {
     setCart((currentCart) =>
-      currentCart.map((item) =>
-        item.id === productId
-          ? { ...item, ...product, quantity: newQuantity }
-          : item
-      )
+      currentCart.map((item) => {
+        if (item.id !== productId) return item;
+
+        if (item.quantity >= Number(item.stock_quantity || 0)) return item;
+
+        return { ...item, quantity: item.quantity + 1 };
+      })
+    );
+  }
+
+  function decreaseQuantity(productId) {
+    setCart((currentCart) =>
+      currentCart
+        .map((item) =>
+          item.id === productId
+            ? { ...item, quantity: item.quantity - 1 }
+            : item
+        )
+        .filter((item) => item.quantity > 0)
     );
   }
 
@@ -530,246 +500,227 @@ function App() {
     );
   }
 
-  const cartCount = cart.reduce(
-    (total, item) => total + item.quantity,
-    0
-  );
+  const filteredProducts = products.filter((product) => {
+    const matchesCategory =
+      selectedCategory === 'All Products' ||
+      product.category === selectedCategory;
 
-  const visibleProducts =
-    activeCategory === 'All'
-      ? products
-      : products.filter(
-          (product) => product.category === activeCategory
-        );
+    const search = searchTerm.trim().toLowerCase();
+
+    const matchesSearch =
+      !search ||
+      product.name?.toLowerCase().includes(search) ||
+      product.description?.toLowerCase().includes(search) ||
+      product.category?.toLowerCase().includes(search);
+
+    return matchesCategory && matchesSearch;
+  });
+
+  const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   return (
-    <div className="app">
+    <div className="storefront">
       <div className="announcement-bar">
-        Quality accessories for your everyday connections
+        <p>
+          Original accessories • Nairobi delivery • Countrywide shipping
+        </p>
       </div>
 
       <header className="site-header">
-        <div className="header-inner">
-          <a href="#home" className="brand-logo" aria-label={STORE_NAME}>
-            <span className="brand-symbol">V</span>
-            <span className="brand-text">
-              <strong>VoltBridge</strong>
-              <small>TECHNOLOGIES</small>
-            </span>
-          </a>
+        <a href="/" className="brand-logo" aria-label="VoltBridge home">
+          <span className="brand-symbol">VB</span>
 
-          <nav className="main-navigation" aria-label="Main navigation">
-            <a href="#home">Home</a>
-            <a href="#categories">Categories</a>
-            <a href="#shop">Shop</a>
-            <a href="#about">About</a>
-            <a href="#contact">Contact</a>
-          </nav>
+          <span className="brand-text">
+            <strong>VoltBridge</strong>
+            <small>TECHNOLOGIES</small>
+          </span>
+        </a>
 
-          <div className="header-actions">
-            <a href="#cart" className="header-cart">
-              <span aria-hidden="true">🛒</span>
-              Cart <span className="cart-count">{cartCount}</span>
-            </a>
+        <button
+          type="button"
+          className="mobile-menu-toggle"
+          onClick={() => setMobileMenuOpen((open) => !open)}
+          aria-label="Toggle navigation"
+        >
+          ☰
+        </button>
 
-            <a
-              className="button button-whatsapp header-whatsapp"
-              href={whatsappLink(`Hello ${STORE_NAME}!`)}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              WhatsApp Us
-            </a>
-          </div>
-        </div>
+        <nav className={mobileMenuOpen ? 'main-nav open' : 'main-nav'}>
+          <a href="#home" onClick={() => setMobileMenuOpen(false)}>Home</a>
+          <a href="#products" onClick={() => setMobileMenuOpen(false)}>Products</a>
+          <a href="#about" onClick={() => setMobileMenuOpen(false)}>About Us</a>
+          <a href="#contact" onClick={() => setMobileMenuOpen(false)}>Contact</a>
+        </nav>
+
+        <button
+          type="button"
+          className="header-cart-button"
+          onClick={() => setCartOpen(true)}
+        >
+          Cart <span>{cartCount}</span>
+        </button>
       </header>
 
       <main>
-        <section id="home" className="hero-section">
-          <div className="hero-background-shape shape-one" />
-          <div className="hero-background-shape shape-two" />
+        <section className="hero-section" id="home">
+          <div className="hero-content">
+            <span className="hero-eyebrow">YOUR TECH. YOUR CONNECTION.</span>
 
-          <div className="hero-inner">
-            <div className="hero-content">
-              <p className="eyebrow hero-eyebrow">
-                POWERING YOUR DIGITAL LIFESTYLE
-              </p>
+            <h1>
+              Power Your World with <span>VoltBridge</span>
+            </h1>
 
-              <h1>
-                The right connection.
-                <br />
-                <span>The right technology.</span>
-              </h1>
-
-              <p className="hero-description">
-                Shop quality Apple and Samsung chargers, cables, gaming
-                devices, and technology accessories at VoltBridge Technologies.
-              </p>
-
-              <div className="hero-actions">
-                <a href="#shop" className="button button-primary">
-                  Explore Products <span aria-hidden="true">→</span>
-                </a>
-
-                <a href="#about" className="button button-outline hero-outline">
-                  Discover VoltBridge
-                </a>
-              </div>
-
-              <div className="hero-benefits">
-                <div>
-                  <span className="benefit-check">✓</span>
-                  <span>Retail & wholesale</span>
-                </div>
-                <div>
-                  <span className="benefit-check">✓</span>
-                  <span>Nairobi, Kenya</span>
-                </div>
-                <div>
-                  <span className="benefit-check">✓</span>
-                  <span>WhatsApp ordering</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="hero-visual" aria-label="Shop technology accessories">
-              <div className="hero-orbit orbit-one" />
-              <div className="hero-orbit orbit-two" />
-
-              <div className="hero-product-tile tile-charger">
-                <span className="hero-tile-icon">ϟ</span>
-                <span>Power</span>
-              </div>
-
-              <div className="hero-product-tile tile-cable">
-                <span className="hero-tile-icon">⌁</span>
-                <span>Connect</span>
-              </div>
-
-              <div className="hero-product-tile tile-device">
-                <span className="hero-tile-icon">▣</span>
-                <span>Play</span>
-              </div>
-
-              <div className="hero-center-mark">
-                <span>V</span>
-                <small>VOLTBRIDGE</small>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="trust-strip" aria-label="Store highlights">
-          <div>
-            <span className="trust-icon">✦</span>
-            <span>Quality Technology Accessories</span>
-          </div>
-          <div>
-            <span className="trust-icon">↗</span>
-            <span>Retail & Wholesale Enquiries</span>
-          </div>
-          <div>
-            <span className="trust-icon">⌖</span>
-            <span>Nairobi, Kenya</span>
-          </div>
-        </section>
-
-        <section id="categories" className="section categories-section">
-          <div className="section-heading">
-            <p className="eyebrow">FIND WHAT YOU NEED</p>
-            <h2>Shop by Category</h2>
-            <p>Explore our collection of everyday tech essentials.</p>
-          </div>
-
-          <div className="category-grid">
-            {CATEGORIES.map((category, index) => (
-              <button
-                type="button"
-                key={category}
-                className={`category-card category-card-${index + 1}`}
-                onClick={() => {
-                  setActiveCategory(category);
-                  document.getElementById('shop')?.scrollIntoView({
-                    behavior: 'smooth',
-                  });
-                }}
-              >
-                <span className="category-number">
-                  0{index + 1}
-                </span>
-                <span className="category-card-title">{category}</span>
-                <span className="category-card-action">
-                  Explore category <span aria-hidden="true">→</span>
-                </span>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section id="shop" className="section shop-section">
-          <div className="section-heading shop-heading">
-            <p className="eyebrow">THE VOLTBRIDGE COLLECTION</p>
-            <h2>Featured Products</h2>
             <p>
-              Browse our current range. Sale prices appear when an offer
-              is active.
+              Discover quality phone accessories, Samsung chargers, Apple
+              accessories and gaming devices at VoltBridge Technologies.
+            </p>
+
+            <div className="hero-actions">
+              <a href="#products" className="primary-button">Shop Products</a>
+
+              <a
+                href={whatsappLink(
+                  `Hello ${STORE_NAME}, I would like to make an enquiry.`
+                )}
+                target="_blank"
+                rel="noreferrer"
+                className="secondary-button"
+              >
+                Chat with Us
+              </a>
+            </div>
+
+            <div className="hero-benefits">
+              <span>✓ Quality accessories</span>
+              <span>✓ Retail and wholesale</span>
+              <span>✓ Nairobi delivery</span>
+            </div>
+          </div>
+
+          <div className="hero-visual" aria-label="VoltBridge technology">
+            <div className="hero-circle">
+              <div className="hero-device">
+                <span>VB</span>
+                <strong>VOLTBRIDGE</strong>
+                <small>TECHNOLOGIES</small>
+              </div>
+
+              <div className="floating-label label-one">POWER</div>
+              <div className="floating-label label-two">CONNECT</div>
+              <div className="floating-label label-three">PLAY</div>
+            </div>
+          </div>
+        </section>
+
+        <section className="benefits-strip">
+          <div>
+            <span className="benefit-icon">✓</span>
+            <div>
+              <strong>Quality Products</strong>
+              <p>Accessories for everyday use</p>
+            </div>
+          </div>
+
+          <div>
+            <span className="benefit-icon">↗</span>
+            <div>
+              <strong>Countrywide Shipping</strong>
+              <p>Contact us for delivery options</p>
+            </div>
+          </div>
+
+          <div>
+            <span className="benefit-icon">▣</span>
+            <div>
+              <strong>WhatsApp Orders</strong>
+              <p>Easy ordering and enquiries</p>
+            </div>
+          </div>
+
+          <div>
+            <span className="benefit-icon">◇</span>
+            <div>
+              <strong>Retail & Wholesale</strong>
+              <p>Ask us about bulk orders</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="products-section" id="products">
+          <div className="section-heading">
+            <span className="section-eyebrow">OUR COLLECTION</span>
+            <h2>Explore Our Products</h2>
+            <p>
+              Find accessories that keep your devices connected and ready.
             </p>
           </div>
 
-          <div className="category-filters" aria-label="Filter products">
-            {['All', ...CATEGORIES].map((category) => (
-              <button
-                type="button"
-                key={category}
-                className={`category-filter ${
-                  activeCategory === category ? 'active' : ''
-                }`}
-                aria-pressed={activeCategory === category}
-                onClick={() => setActiveCategory(category)}
-              >
-                {category}
-              </button>
-            ))}
+          <div className="product-toolbar">
+            <div className="category-filters">
+              {CATEGORIES.map((category) => (
+                <button
+                  type="button"
+                  key={category}
+                  className={
+                    selectedCategory === category ? 'category-active' : ''
+                  }
+                  onClick={() => setSelectedCategory(category)}
+                >
+                  {category}
+                </button>
+              ))}
+            </div>
+
+            <input
+              type="search"
+              className="product-search"
+              placeholder="Search products..."
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              aria-label="Search products"
+            />
           </div>
 
           {loading ? (
             <div className="products-message">
-              <span className="loading-spinner" />
-              <p>Loading our products...</p>
+              <div className="loading-spinner" />
+              <p>Loading products...</p>
             </div>
-          ) : error ? (
+          ) : fetchError ? (
             <div className="products-message error-message">
-              <h3>Products unavailable</h3>
-              <p>{error}</p>
+              <p>{fetchError}</p>
               <button
                 type="button"
-                className="button button-primary"
                 onClick={() => window.location.reload()}
               >
                 Try Again
               </button>
             </div>
-          ) : visibleProducts.length === 0 ? (
+          ) : filteredProducts.length === 0 ? (
             <div className="products-message">
               <h3>No products found</h3>
-              <p>Try another category or check back soon.</p>
-              {activeCategory !== 'All' && (
-                <button
-                  type="button"
-                  className="button button-outline"
-                  onClick={() => setActiveCategory('All')}
-                >
-                  View All Products
-                </button>
-              )}
+              <p>
+                Try another search or category, or contact us for assistance.
+              </p>
+
+              <a
+                href={whatsappLink(
+                  `Hello ${STORE_NAME}, I would like to enquire about your available products.`
+                )}
+                target="_blank"
+                rel="noreferrer"
+                className="primary-button"
+              >
+                Ask on WhatsApp
+              </a>
             </div>
           ) : (
-            <div className="product-grid">
-              {visibleProducts.map((product) => (
+            <div className="products-grid">
+              {filteredProducts.map((product) => (
                 <ProductCard
                   key={product.id}
                   product={product}
-                  onView={setSelectedProduct}
+                  onViewDetails={setSelectedProduct}
                   onAddToCart={addToCart}
                 />
               ))}
@@ -777,80 +728,107 @@ function App() {
           )}
         </section>
 
-        <ShoppingCart
-          cart={cart}
-          products={products}
-          onUpdateQuantity={updateQuantity}
-          onRemove={removeFromCart}
-          onClear={() => setCart([])}
-        />
-
-        <section id="about" className="section about-section">
-          <div className="about-decoration" aria-hidden="true">
-            <span>V</span>
+        <section className="wholesale-banner">
+          <div>
+            <span className="section-eyebrow">BUSINESS CUSTOMERS</span>
+            <h2>Buying in Bulk?</h2>
+            <p>
+              Contact VoltBridge Technologies to enquire about wholesale
+              orders, product availability and bulk pricing.
+            </p>
           </div>
 
+          <a
+            href={whatsappLink(
+              `Hello ${STORE_NAME}, I am interested in wholesale prices and bulk orders.`
+            )}
+            target="_blank"
+            rel="noreferrer"
+            className="wholesale-button"
+          >
+            Enquire About Wholesale
+          </a>
+        </section>
+
+        <section className="about-section" id="about">
           <div className="about-content">
-            <p className="eyebrow">THE VOLTBRIDGE DIFFERENCE</p>
-            <h2>Technology that keeps you connected.</h2>
+            <span className="section-eyebrow">ABOUT VOLTBRIDGE</span>
+            <h2>Your Connection to Quality Technology</h2>
 
             <p>
-              VoltBridge Technologies supplies chargers, cables, gaming
-              devices, and technology accessories for everyday life.
-              We serve customers in Nairobi and welcome enquiries from
+              VoltBridge Technologies provides phone accessories, charging
+              solutions and technology products for customers in Nairobi and
               across Kenya.
             </p>
 
             <p>
-              Whether you are shopping for yourself or sourcing products
-              for your business, contact us to discuss available items,
-              wholesale enquiries, and delivery arrangements.
+              Whether you are shopping for yourself or sourcing products for
+              your business, contact our team for product information,
+              availability and ordering assistance.
             </p>
 
-            <a href="#contact" className="button button-primary">
-              Talk to Our Team <span aria-hidden="true">→</span>
+            <a
+              href={whatsappLink(
+                `Hello ${STORE_NAME}, I would like to know more about your products.`
+              )}
+              target="_blank"
+              rel="noreferrer"
+              className="primary-button"
+            >
+              Contact Our Team
             </a>
           </div>
         </section>
 
-        <section id="contact" className="section contact-section">
+        <section className="contact-section" id="contact">
           <div className="section-heading">
-            <p className="eyebrow">LET'S CONNECT</p>
+            <span className="section-eyebrow">GET IN TOUCH</span>
             <h2>We're Here to Help</h2>
-            <p>
-              Have a question about a product? Contact us or connect
-              with us on social media.
-            </p>
+            <p>Contact us about products, orders, delivery or wholesale.</p>
           </div>
 
           <div className="contact-grid">
-            <article className="contact-card">
-              <span className="contact-card-icon">⌖</span>
-              <h3>Visit Us</h3>
-              <p>Bihi Tower, 4th Floor, Suite 5</p>
-              <p>Nairobi, Kenya</p>
-            </article>
-
-            <article className="contact-card">
-              <span className="contact-card-icon">↗</span>
-              <h3>WhatsApp Us</h3>
-              <p>+254 726 147 462</p>
+            <div className="contact-card">
+              <span className="contact-icon">☎</span>
+              <h3>Call or WhatsApp</h3>
+              <p>0794 546 686</p>
+              <a href="tel:+254794546686">Call Us</a>
               <a
-                href={whatsappLink(`Hello ${STORE_NAME}! I have a question.`)}
+                href={whatsappLink(`Hello ${STORE_NAME}, I need assistance.`)}
                 target="_blank"
-                rel="noopener noreferrer"
-                className="text-link"
+                rel="noreferrer"
               >
-                Start a conversation →
+                WhatsApp Us
               </a>
-            </article>
+            </div>
 
-            <article className="contact-card social-contact-card">
-              <span className="contact-card-icon">◎</span>
-              <h3>Follow Our Journey</h3>
-              <p>Connect with VoltBridge on social media.</p>
-              <SocialLinks />
-            </article>
+            <div className="contact-card">
+              <span className="contact-icon">⌖</span>
+              <h3>Visit Us</h3>
+              <p>{STORE_ADDRESS}</p>
+              <a
+                href="https://www.google.com/maps/search/?api=1&query=Bihi+Tower+Nairobi+Kenya"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Find Our Location
+              </a>
+            </div>
+
+            <div className="contact-card">
+              <span className="contact-icon">◷</span>
+              <h3>Ordering</h3>
+              <p>Contact us to confirm availability and delivery options.</p>
+              <a
+                href={whatsappLink(
+                  `Hello ${STORE_NAME}, I would like to place an order.`
+                )}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Start an Order
+              </a>
+            </div>
           </div>
         </section>
       </main>
@@ -858,8 +836,8 @@ function App() {
       <footer className="site-footer">
         <div className="footer-main">
           <div className="footer-brand">
-            <a href="#home" className="brand-logo footer-logo">
-              <span className="brand-symbol">V</span>
+            <a href="#home" className="brand-logo">
+              <span className="brand-symbol">VB</span>
               <span className="brand-text">
                 <strong>VoltBridge</strong>
                 <small>TECHNOLOGIES</small>
@@ -867,38 +845,48 @@ function App() {
             </a>
 
             <p>
-              Your connection to quality technology accessories.
+              Your connection to quality phone accessories and technology
+              products in Kenya.
             </p>
 
             <SocialLinks />
           </div>
 
           <div className="footer-column">
-            <h3>Explore</h3>
+            <h3>Quick Links</h3>
             <a href="#home">Home</a>
-            <a href="#categories">Categories</a>
-            <a href="#shop">Shop Products</a>
+            <a href="#products">Products</a>
             <a href="#about">About Us</a>
+            <a href="#contact">Contact</a>
           </div>
 
           <div className="footer-column">
-            <h3>Customer Care</h3>
-            <a href="#contact">Contact Us</a>
-            <a href="#cart">Shopping Cart</a>
+            <h3>Customer Support</h3>
             <a
-              href={whatsappLink(`Hello ${STORE_NAME}!`)}
+              href={whatsappLink(
+                `Hello ${STORE_NAME}, I need help with an order.`
+              )}
               target="_blank"
-              rel="noopener noreferrer"
+              rel="noreferrer"
             >
-              WhatsApp Enquiries
+              Orders & Enquiries
             </a>
+            <a
+              href={whatsappLink(
+                `Hello ${STORE_NAME}, I would like to ask about wholesale orders.`
+              )}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Wholesale
+            </a>
+            <a href="#contact">Delivery Information</a>
           </div>
 
-          <div className="footer-column footer-address">
-            <h3>Find Us</h3>
-            <p>Bihi Tower, 4th Floor, Suite 5</p>
-            <p>Nairobi, Kenya</p>
-            <a href="tel:+254726147462">+254 726 147 462</a>
+          <div className="footer-column">
+            <h3>Our Location</h3>
+            <p>{STORE_ADDRESS}</p>
+            <p>Kenya</p>
           </div>
         </div>
 
@@ -906,7 +894,7 @@ function App() {
           <p>
             © {new Date().getFullYear()} {STORE_NAME}. All rights reserved.
           </p>
-          <a href="#home">Back to top ↑</a>
+          <p>Quality. Connection. Technology.</p>
         </div>
       </footer>
 
@@ -916,17 +904,41 @@ function App() {
         onAddToCart={addToCart}
       />
 
+      <ShoppingCart
+        isOpen={cartOpen}
+        onClose={() => setCartOpen(false)}
+        cart={cart}
+        onIncrease={increaseQuantity}
+        onDecrease={decreaseQuantity}
+        onRemove={removeFromCart}
+      />
+
       <a
         className="floating-whatsapp"
-        href={whatsappLink(`Hello ${STORE_NAME}!`)}
+        href={whatsappLink(
+          `Hello ${STORE_NAME}, I would like to make an enquiry.`
+        )}
         target="_blank"
-        rel="noopener noreferrer"
+        rel="noreferrer"
         aria-label="Chat with VoltBridge on WhatsApp"
-        title="Chat on WhatsApp"
       >
-        <span aria-hidden="true">✆</span>
+        WhatsApp
       </a>
     </div>
+  );
+}
+
+function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<Storefront />} />
+      <Route path="/admin" element={<Admin />} />
+      <Route
+        path="/admin/dashboard"
+        element={<Navigate to="/admin" replace />}
+      />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
 
