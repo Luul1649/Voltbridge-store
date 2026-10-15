@@ -20,6 +20,14 @@ const CATEGORIES = [
   'Apple Accessories',
 ];
 
+const ORDER_STATUSES = [
+  'pending',
+  'confirmed',
+  'shipped',
+  'delivered',
+  'cancelled',
+];
+
 function formatPrice(value) {
   return `KSh ${Number(value || 0).toLocaleString('en-KE')}`;
 }
@@ -31,16 +39,41 @@ function getSalePrice(product) {
   return salePrice > 0 && salePrice < price ? salePrice : price;
 }
 
+function formatDate(value) {
+  if (!value) return 'Unknown date';
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return 'Unknown date';
+
+  return date.toLocaleString('en-KE', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+}
+
+function getOrderReference(order) {
+  return `VB-${order.order_number}`;
+}
+
 export default function Admin() {
   const navigate = useNavigate();
 
+  // Authentication
   const [session, setSession] = useState(null);
   const [authorized, setAuthorized] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [products, setProducts] = useState([]);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loggingIn, setLoggingIn] = useState(false);
+
+  // General messages
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+
+  // Inventory
+  const [loading, setLoading] = useState(false);
+  const [products, setProducts] = useState([]);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [editingId, setEditingId] = useState(null);
@@ -49,10 +82,17 @@ export default function Admin() {
   const [imagePreview, setImagePreview] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loggingIn, setLoggingIn] = useState(false);
+  // Orders
+  const [orders, setOrders] = useState([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [ordersError, setOrdersError] = useState('');
+  const [ordersNotice, setOrdersNotice] = useState('');
+  const [orderFilter, setOrderFilter] = useState('all');
+  const [orderSearch, setOrderSearch] = useState('');
+  const [expandedOrder, setExpandedOrder] = useState(null);
+  const [updatingOrderId, setUpdatingOrderId] = useState(null);
 
+  // Verify the signed-in user is an authorized administrator.
   const verifyAdmin = useCallback(async (currentSession) => {
     if (!currentSession?.user) {
       setSession(null);
@@ -99,6 +139,7 @@ export default function Admin() {
     }
   }, []);
 
+  // Load products.
   const loadProducts = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -122,6 +163,50 @@ export default function Admin() {
     }
   }, []);
 
+  // Load orders together with their order items.
+  const loadOrders = useCallback(async () => {
+    setOrdersLoading(true);
+    setOrdersError('');
+
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('orders')
+        .select(`
+          id,
+          order_number,
+          customer_name,
+          customer_phone,
+          delivery_address,
+          customer_notes,
+          status,
+          subtotal,
+          created_at,
+          updated_at,
+          order_items (
+            id,
+            product_name,
+            quantity,
+            unit_price,
+            line_total
+          )
+        `)
+        .order('created_at', { ascending: false });
+
+      if (fetchError) throw fetchError;
+
+      setOrders(data || []);
+    } catch (err) {
+      console.error('Order loading failed:', err);
+      setOrdersError(
+        err.message ||
+          'Could not load orders. Check your Supabase database permissions.'
+      );
+    } finally {
+      setOrdersLoading(false);
+    }
+  }, []);
+
+  // Initialize authentication and listen for login/logout changes.
   useEffect(() => {
     let mounted = true;
 
@@ -155,12 +240,15 @@ export default function Admin() {
     };
   }, [verifyAdmin]);
 
+  // Load dashboard data after administrator authorization.
   useEffect(() => {
     if (authorized) {
       loadProducts();
+      loadOrders();
     }
-  }, [authorized, loadProducts]);
+  }, [authorized, loadProducts, loadOrders]);
 
+  // Product form helpers.
   function updateField(event) {
     const { name, value, type, checked } = event.target;
 
@@ -218,10 +306,16 @@ export default function Admin() {
     setError('');
     setImageFile(file);
 
-    const previewUrl = URL.createObjectURL(file);
-    setImagePreview(previewUrl);
+    setImagePreview((previousPreview) => {
+      if (previousPreview.startsWith('blob:')) {
+        URL.revokeObjectURL(previousPreview);
+      }
+
+      return URL.createObjectURL(file);
+    });
   }
 
+  // Administrator login.
   async function handleLogin(event) {
     event.preventDefault();
     setError('');
@@ -229,10 +323,11 @@ export default function Admin() {
     setLoggingIn(true);
 
     try {
-      const { data, error: loginError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
+      const { data, error: loginError } =
+        await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
 
       if (loginError) throw loginError;
 
@@ -254,6 +349,7 @@ export default function Admin() {
     }
   }
 
+  // Administrator logout.
   async function handleLogout() {
     setError('');
 
@@ -266,14 +362,18 @@ export default function Admin() {
 
     resetForm();
     setProducts([]);
+    setOrders([]);
     setAuthorized(false);
     setSession(null);
   }
 
+  // Upload a product image to Supabase Storage.
   async function uploadImage() {
     if (!imageFile) return form.image_url || null;
 
-    const extension = imageFile.name.split('.').pop()?.toLowerCase() || 'jpg';
+    const extension =
+      imageFile.name.split('.').pop()?.toLowerCase() || 'jpg';
+
     const filePath = `${crypto.randomUUID()}.${extension}`;
 
     const { error: uploadError } = await supabase.storage
@@ -293,14 +393,17 @@ export default function Admin() {
     return data.publicUrl;
   }
 
+  // Add or update a product.
   async function handleSaveProduct(event) {
     event.preventDefault();
     setError('');
     setNotice('');
 
     const price = Number(form.price);
+
     const salePrice =
       form.sale_price.trim() === '' ? null : Number(form.sale_price);
+
     const stockQuantity = Number(form.stock_quantity);
 
     if (!form.name.trim()) {
@@ -315,16 +418,17 @@ export default function Admin() {
 
     if (
       salePrice !== null &&
-      (!Number.isFinite(salePrice) || salePrice <= 0 || salePrice >= price)
+      (!Number.isFinite(salePrice) ||
+        salePrice <= 0 ||
+        salePrice >= price)
     ) {
-      setError('The sale price must be greater than zero and lower than the original price.');
+      setError(
+        'The sale price must be greater than zero and lower than the original price.'
+      );
       return;
     }
 
-    if (
-      !Number.isInteger(stockQuantity) ||
-      stockQuantity < 0
-    ) {
+    if (!Number.isInteger(stockQuantity) || stockQuantity < 0) {
       setError('Stock quantity must be a whole number of zero or more.');
       return;
     }
@@ -365,7 +469,12 @@ export default function Admin() {
 
       if (result.error) throw result.error;
 
-      setNotice(editingId ? 'Product updated successfully.' : 'Product added successfully.');
+      setNotice(
+        editingId
+          ? 'Product updated successfully.'
+          : 'Product added successfully.'
+      );
+
       resetForm();
       await loadProducts();
     } catch (err) {
@@ -379,6 +488,7 @@ export default function Admin() {
     }
   }
 
+  // Delete a product.
   async function handleDelete(product) {
     const confirmed = window.confirm(
       `Delete "${product.name}"? This cannot be undone.`
@@ -407,6 +517,7 @@ export default function Admin() {
     }
   }
 
+  // Show or hide a product.
   async function toggleActive(product) {
     setError('');
     setNotice('');
@@ -434,11 +545,94 @@ export default function Admin() {
     }
   }
 
+  // Update an order's status.
+  async function updateOrderStatus(order, newStatus) {
+    if (!ORDER_STATUSES.includes(newStatus)) {
+      setOrdersError('Invalid order status selected.');
+      return;
+    }
+
+    if (newStatus === order.status) return;
+
+    setOrdersError('');
+    setOrdersNotice('');
+    setUpdatingOrderId(order.id);
+
+    try {
+      const { error: updateError } = await supabase
+        .from('orders')
+        .update({
+          status: newStatus,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', order.id);
+
+      if (updateError) throw updateError;
+
+      setOrders((currentOrders) =>
+        currentOrders.map((currentOrder) =>
+          currentOrder.id === order.id
+            ? { ...currentOrder, status: newStatus }
+            : currentOrder
+        )
+      );
+
+      setOrdersNotice(
+        `${getOrderReference(order)} updated to ${newStatus}.`
+      );
+    } catch (err) {
+      console.error('Order status update failed:', err);
+      setOrdersError(
+        err.message ||
+          'Could not update the order. Check your Supabase permissions.'
+      );
+    } finally {
+      setUpdatingOrderId(null);
+    }
+  }
+
+  // Open WhatsApp to contact a customer.
+  function contactOrderCustomer(order) {
+    const digits = String(order.customer_phone || '').replace(/\D/g, '');
+
+    if (!digits) {
+      setOrdersError('This order has no customer phone number.');
+      return;
+    }
+
+    let phone = digits;
+
+    // Convert Kenyan local numbers to international format.
+    if (phone.startsWith('0') && phone.length === 10) {
+      phone = `254${phone.slice(1)}`;
+    } else if (phone.startsWith('254')) {
+      // Already in Kenyan international format.
+    } else if (phone.length === 9) {
+      phone = `254${phone}`;
+    }
+
+    const message = [
+      `Hello ${order.customer_name},`,
+      `I am contacting you from VoltBridge Technologies about order ${getOrderReference(order)}.`,
+      `Order status: ${order.status}.`,
+      `Order total: ${formatPrice(order.subtotal)}.`,
+    ].join('\n');
+
+    window.open(
+      `https://wa.me/${phone}?text=${encodeURIComponent(message)}`,
+      '_blank',
+      'noopener,noreferrer'
+    );
+  }
+
+  // Inventory filtering.
   const visibleProducts = products.filter((product) => {
+    const searchTerm = search.trim().toLowerCase();
+
     const matchesSearch =
-      !search.trim() ||
-      product.name?.toLowerCase().includes(search.toLowerCase()) ||
-      product.category?.toLowerCase().includes(search.toLowerCase());
+      !searchTerm ||
+      product.name?.toLowerCase().includes(searchTerm) ||
+      product.category?.toLowerCase().includes(searchTerm);
 
     const matchesFilter =
       filter === 'all' ||
@@ -453,18 +647,51 @@ export default function Admin() {
   });
 
   const totalProducts = products.length;
+
   const inStockCount = products.filter(
     (product) => Number(product.stock_quantity) > 0
   ).length;
+
   const outOfStockCount = products.filter(
     (product) => Number(product.stock_quantity) <= 0
   ).length;
+
   const saleCount = products.filter(
     (product) =>
       Number(product.sale_price) > 0 &&
       Number(product.sale_price) < Number(product.price)
   ).length;
 
+  // Order filtering and searching.
+  const visibleOrders = orders.filter((order) => {
+    const matchesStatus =
+      orderFilter === 'all' || order.status === orderFilter;
+
+    const searchTerm = orderSearch.trim().toLowerCase();
+
+    const matchesSearch =
+      !searchTerm ||
+      getOrderReference(order).toLowerCase().includes(searchTerm) ||
+      order.customer_name?.toLowerCase().includes(searchTerm) ||
+      order.customer_phone?.toLowerCase().includes(searchTerm) ||
+      order.delivery_address?.toLowerCase().includes(searchTerm);
+
+    return matchesStatus && matchesSearch;
+  });
+
+  const pendingOrders = orders.filter(
+    (order) => order.status === 'pending'
+  ).length;
+
+  const confirmedOrders = orders.filter(
+    (order) => order.status === 'confirmed'
+  ).length;
+
+  const completedOrders = orders.filter(
+    (order) => order.status === 'delivered'
+  ).length;
+
+  // Authentication loading screen.
   if (checkingAuth) {
     return (
       <main className="admin-page">
@@ -476,6 +703,7 @@ export default function Admin() {
     );
   }
 
+  // Login screen.
   if (!session || !authorized) {
     return (
       <main className="admin-page admin-login-page">
@@ -509,7 +737,10 @@ export default function Admin() {
             required
           />
 
-          <button className="admin-primary-button" disabled={loggingIn}>
+          <button
+            className="admin-primary-button"
+            disabled={loggingIn}
+          >
             {loggingIn ? 'Signing in...' : 'Sign In'}
           </button>
 
@@ -525,6 +756,7 @@ export default function Admin() {
     );
   }
 
+  // Main administrator dashboard.
   return (
     <main className="admin-page">
       <header className="admin-topbar">
@@ -538,6 +770,7 @@ export default function Admin() {
 
         <div className="admin-top-actions">
           <span className="admin-user-email">{session.user.email}</span>
+
           <button
             type="button"
             className="admin-secondary-button"
@@ -545,6 +778,7 @@ export default function Admin() {
           >
             View Store
           </button>
+
           <button
             type="button"
             className="admin-logout-button"
@@ -560,7 +794,7 @@ export default function Admin() {
           <div>
             <span className="admin-eyebrow">STORE MANAGEMENT</span>
             <h1>Inventory Dashboard</h1>
-            <p>Manage your products, stock, pricing and sale offers.</p>
+            <p>Manage products, stock, pricing, discounts and customer orders.</p>
           </div>
 
           <button
@@ -595,6 +829,7 @@ export default function Admin() {
           </div>
         )}
 
+        {/* Inventory statistics */}
         <section className="admin-stats">
           <article className="admin-stat-card">
             <span>Total Products</span>
@@ -617,6 +852,7 @@ export default function Admin() {
           </article>
         </section>
 
+        {/* Product form */}
         <section className="admin-panel" id="product-form">
           <div className="admin-panel-heading">
             <div>
@@ -685,9 +921,7 @@ export default function Admin() {
               </div>
 
               <div className="admin-field">
-                <label htmlFor="product-sale-price">
-                  Sale Price (KSh)
-                </label>
+                <label htmlFor="product-sale-price">Sale Price (KSh)</label>
                 <input
                   id="product-sale-price"
                   name="sale_price"
@@ -755,6 +989,7 @@ export default function Admin() {
                   value={form.image_url}
                   onChange={(event) => {
                     updateField(event);
+
                     setImageFile(null);
                     setImagePreview(event.target.value);
                   }}
@@ -768,6 +1003,7 @@ export default function Admin() {
               {imagePreview && (
                 <div className="admin-field admin-field-full">
                   <label>Image Preview</label>
+
                   <div className="admin-image-preview">
                     <img
                       src={imagePreview}
@@ -776,6 +1012,7 @@ export default function Admin() {
                         event.currentTarget.style.display = 'none';
                       }}
                     />
+
                     <button
                       type="button"
                       className="admin-secondary-button"
@@ -810,6 +1047,7 @@ export default function Admin() {
             {form.price && (
               <div className="admin-price-preview">
                 <span>Storefront price preview</span>
+
                 <strong>
                   {formatPrice(
                     form.sale_price &&
@@ -825,7 +1063,9 @@ export default function Admin() {
                   Number(form.sale_price) < Number(form.price) && (
                     <span className="admin-sale-label">
                       Sale: save{' '}
-                      {formatPrice(Number(form.price) - Number(form.sale_price))}
+                      {formatPrice(
+                        Number(form.price) - Number(form.sale_price)
+                      )}
                     </span>
                   )}
               </div>
@@ -855,7 +1095,8 @@ export default function Admin() {
           </form>
         </section>
 
-        <section className="admin-panel">
+        {/* Product inventory */}
+        <section className="admin-panel" id="inventory">
           <div className="admin-panel-heading">
             <div>
               <h2>Product Inventory</h2>
@@ -938,6 +1179,7 @@ export default function Admin() {
 
                             <div>
                               <strong>{product.name}</strong>
+
                               {discounted && (
                                 <small className="admin-sale-label">
                                   On Sale
@@ -953,6 +1195,7 @@ export default function Admin() {
                           <strong>
                             {formatPrice(getSalePrice(product))}
                           </strong>
+
                           {discounted && (
                             <small className="admin-original-price">
                               {formatPrice(product.price)}
@@ -1020,9 +1263,269 @@ export default function Admin() {
           )}
         </section>
 
+        {/* Order statistics */}
+        <section className="admin-stats" id="orders">
+          <article className="admin-stat-card">
+            <span>Total Orders</span>
+            <strong>{orders.length}</strong>
+          </article>
+
+          <article className="admin-stat-card">
+            <span>Pending Orders</span>
+            <strong>{pendingOrders}</strong>
+          </article>
+
+          <article className="admin-stat-card">
+            <span>Confirmed Orders</span>
+            <strong>{confirmedOrders}</strong>
+          </article>
+
+          <article className="admin-stat-card">
+            <span>Delivered Orders</span>
+            <strong>{completedOrders}</strong>
+          </article>
+        </section>
+
+        {/* Customer orders */}
+        <section className="admin-panel">
+          <div className="admin-panel-heading">
+            <div>
+              <h2>Customer Orders</h2>
+              <p>Review purchases and manage order fulfilment.</p>
+            </div>
+
+            <button
+              type="button"
+              className="admin-secondary-button"
+              onClick={loadOrders}
+              disabled={ordersLoading}
+            >
+              {ordersLoading ? 'Refreshing...' : 'Refresh Orders'}
+            </button>
+          </div>
+
+          {ordersError && (
+            <div className="admin-alert error">
+              <span>{ordersError}</span>
+              <button
+                type="button"
+                onClick={() => setOrdersError('')}
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          {ordersNotice && (
+            <div className="admin-alert success">
+              <span>{ordersNotice}</span>
+              <button
+                type="button"
+                onClick={() => setOrdersNotice('')}
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          <div className="admin-inventory-toolbar">
+            <input
+              type="search"
+              value={orderSearch}
+              onChange={(event) => setOrderSearch(event.target.value)}
+              placeholder="Search order, customer or phone..."
+              aria-label="Search customer orders"
+            />
+
+            <select
+              value={orderFilter}
+              onChange={(event) => setOrderFilter(event.target.value)}
+              aria-label="Filter orders by status"
+            >
+              <option value="all">All Orders</option>
+              <option value="pending">Pending</option>
+              <option value="confirmed">Confirmed</option>
+              <option value="shipped">Shipped</option>
+              <option value="delivered">Delivered</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+
+          <p>
+            {visibleOrders.length} order(s) shown
+          </p>
+
+          {ordersLoading && orders.length === 0 ? (
+            <div className="admin-empty-state">Loading orders...</div>
+          ) : visibleOrders.length === 0 ? (
+            <div className="admin-empty-state">
+              <h3>No orders found</h3>
+              <p>
+                Orders saved through your store checkout will appear here.
+              </p>
+            </div>
+          ) : (
+            <div className="admin-table-wrapper">
+              <table className="admin-inventory-table">
+                <thead>
+                  <tr>
+                    <th>Order</th>
+                    <th>Customer</th>
+                    <th>Total</th>
+                    <th>Status</th>
+                    <th>Date</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {visibleOrders.map((order) => (
+                    <tr key={order.id}>
+                      <td>
+                        <strong>{getOrderReference(order)}</strong>
+                      </td>
+
+                      <td>
+                        <strong>{order.customer_name}</strong>
+                        <br />
+                        <small>{order.customer_phone}</small>
+                      </td>
+
+                      <td>
+                        <strong>{formatPrice(order.subtotal)}</strong>
+                      </td>
+
+                      <td>
+                        <select
+                          value={order.status}
+                          disabled={updatingOrderId === order.id}
+                          aria-label={`Status for ${getOrderReference(order)}`}
+                          onChange={(event) =>
+                            updateOrderStatus(order, event.target.value)
+                          }
+                        >
+                          {ORDER_STATUSES.map((status) => (
+                            <option key={status} value={status}>
+                              {status.charAt(0).toUpperCase() +
+                                status.slice(1)}
+                            </option>
+                          ))}
+                        </select>
+
+                        {updatingOrderId === order.id && (
+                          <small>Saving...</small>
+                        )}
+                      </td>
+
+                      <td>{formatDate(order.created_at)}</td>
+
+                      <td>
+                        <div className="admin-row-actions">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedOrder(
+                                expandedOrder === order.id ? null : order.id
+                              )
+                            }
+                          >
+                            {expandedOrder === order.id
+                              ? 'Hide Details'
+                              : 'Details'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => contactOrderCustomer(order)}
+                          >
+                            WhatsApp
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {visibleOrders
+                .filter((order) => expandedOrder === order.id)
+                .map((order) => (
+                  <div
+                    key={`details-${order.id}`}
+                    className="admin-empty-state"
+                  >
+                    <h3>{getOrderReference(order)} — Order Details</h3>
+
+                    <p>
+                      <strong>Customer:</strong> {order.customer_name}
+                    </p>
+
+                    <p>
+                      <strong>Phone:</strong> {order.customer_phone}
+                    </p>
+
+                    <p>
+                      <strong>Delivery address:</strong>{' '}
+                      {order.delivery_address || 'Not provided'}
+                    </p>
+
+                    <p>
+                      <strong>Customer notes:</strong>{' '}
+                      {order.customer_notes || 'None'}
+                    </p>
+
+                    <h4>Items Ordered</h4>
+
+                    {order.order_items?.length ? (
+                      <div className="admin-table-wrapper">
+                        <table className="admin-inventory-table">
+                          <thead>
+                            <tr>
+                              <th>Product</th>
+                              <th>Quantity</th>
+                              <th>Unit Price</th>
+                              <th>Line Total</th>
+                            </tr>
+                          </thead>
+
+                          <tbody>
+                            {order.order_items.map((item) => (
+                              <tr key={item.id}>
+                                <td>{item.product_name}</td>
+                                <td>{item.quantity}</td>
+                                <td>{formatPrice(item.unit_price)}</td>
+                                <td>{formatPrice(item.line_total)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p>No item details were found for this order.</p>
+                    )}
+
+                    <p>
+                      <strong>
+                        Order total: {formatPrice(order.subtotal)}
+                      </strong>
+                    </p>
+
+                    <button
+                      type="button"
+                      className="admin-secondary-button"
+                      onClick={() => setExpandedOrder(null)}
+                    >
+                      Close Details
+                    </button>
+                  </div>
+                ))}
+            </div>
+          )}
+        </section>
+
         <p className="admin-security-note">
-          Inventory changes are restricted by your Supabase database policies.
-          Keep your administrator password private.
+          Inventory and order changes are restricted by your Supabase
+          database policies. Keep your administrator password private.
         </p>
       </div>
     </main>
