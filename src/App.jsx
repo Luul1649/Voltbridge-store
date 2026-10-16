@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from 'react';
 import {
   Routes,
@@ -20,7 +21,6 @@ import {
   Truck,
   MessageCircle,
   RefreshCw,
-  Activity,
   ChevronRight,
 } from 'lucide-react';
 
@@ -70,13 +70,14 @@ function getProductName(product) {
 }
 
 function getProductStock(product) {
-  const stock = product?.stock_quantity ?? product?.stock ?? null;
+  const stock = product?.stock_quantity ?? product?.stock;
 
   if (stock === null || stock === undefined || stock === '') {
     return null;
   }
 
-  return Number(stock);
+  const number = Number(stock);
+  return Number.isFinite(number) ? number : null;
 }
 
 function ProductImage({ product, className = '' }) {
@@ -123,7 +124,11 @@ function ErrorState({ message, onRetry }) {
       <Package size={36} />
       <h3>Products could not be loaded</h3>
       <p>{message}</p>
-      <button className="btn btn-primary" onClick={onRetry}>
+      <button
+        type="button"
+        className="btn btn-primary"
+        onClick={onRetry}
+      >
         <RefreshCw size={16} />
         Try again
       </button>
@@ -149,6 +154,10 @@ function ProductCard({ product }) {
   const outOfStock = stock !== null && stock <= 0;
   const discounted = price < regularPrice;
 
+  function handleAddToCart() {
+    addToCart(product);
+  }
+
   return (
     <article className="product-card">
       <Link
@@ -159,9 +168,7 @@ function ProductCard({ product }) {
         <div className="product-card-image">
           <ProductImage product={product} />
 
-          {discounted && (
-            <span className="sale-badge">Sale</span>
-          )}
+          {discounted && <span className="sale-badge">Sale</span>}
 
           {outOfStock && (
             <span className="stock-badge">Out of stock</span>
@@ -192,15 +199,20 @@ function ProductCard({ product }) {
         </div>
 
         {stock !== null && (
-          <p className={`stock-status ${outOfStock ? 'out-of-stock' : ''}`}>
+          <p
+            className={`stock-status ${
+              outOfStock ? 'out-of-stock' : ''
+            }`}
+          >
             {outOfStock ? 'Currently unavailable' : `${stock} in stock`}
           </p>
         )}
 
         <button
+          type="button"
           className="btn btn-primary product-add-button"
           disabled={outOfStock}
-          onClick={() => addToCart(product)}
+          onClick={handleAddToCart}
         >
           <ShoppingCart size={16} />
           {outOfStock ? 'Out of stock' : 'Add to cart'}
@@ -217,7 +229,9 @@ function Header() {
   const [searchTerm, setSearchTerm] = useState('');
   const navigate = useNavigate();
 
-  const cartCount = (cartItems || []).reduce(
+  const items = Array.isArray(cartItems) ? cartItems : [];
+
+  const cartCount = items.reduce(
     (total, item) => total + Number(item.quantity || 1),
     0
   );
@@ -237,13 +251,14 @@ function Header() {
   return (
     <>
       <div className="announcement-bar">
-        Original Samsung and Apple chargers & phone accessories.
+        Original Samsung and Apple chargers &amp; phone accessories.
         <span> Free Nairobi delivery on eligible orders.</span>
       </div>
 
       <header className="site-header">
         <div className="header-inner">
           <button
+            type="button"
             className="icon-button mobile-menu-button"
             onClick={() => setMenuOpen(!menuOpen)}
             aria-label={menuOpen ? 'Close menu' : 'Open menu'}
@@ -251,7 +266,11 @@ function Header() {
             {menuOpen ? <X size={22} /> : <Menu size={22} />}
           </button>
 
-          <Link to="/" className="brand-logo" onClick={() => setMenuOpen(false)}>
+          <Link
+            to="/"
+            className="brand-logo"
+            onClick={() => setMenuOpen(false)}
+          >
             <span className="brand-mark">
               <Package size={25} />
             </span>
@@ -265,19 +284,29 @@ function Header() {
             <Link to="/" onClick={() => setMenuOpen(false)}>
               Home
             </Link>
-            <a href="/#products" onClick={() => setMenuOpen(false)}>
+            <Link
+              to="/#products"
+              onClick={() => setMenuOpen(false)}
+            >
               Shop
-            </a>
-            <a href="/#about" onClick={() => setMenuOpen(false)}>
+            </Link>
+            <Link
+              to="/#about"
+              onClick={() => setMenuOpen(false)}
+            >
               About us
-            </a>
-            <a href="/#contact" onClick={() => setMenuOpen(false)}>
+            </Link>
+            <Link
+              to="/#contact"
+              onClick={() => setMenuOpen(false)}
+            >
               Contact
-            </a>
+            </Link>
           </nav>
 
           <div className="header-actions">
             <button
+              type="button"
               className="icon-button"
               aria-label="Search products"
               onClick={() => setSearchOpen(!searchOpen)}
@@ -342,7 +371,11 @@ function Footer() {
 
         <div className="footer-column">
           <h4>Customer service</h4>
-          <a href={`https://wa.me/${WHATSAPP_NUMBER}`} target="_blank" rel="noreferrer">
+          <a
+            href={`https://wa.me/${WHATSAPP_NUMBER}`}
+            target="_blank"
+            rel="noreferrer"
+          >
             WhatsApp enquiries
           </a>
           <p>{BUSINESS_ADDRESS}</p>
@@ -380,9 +413,7 @@ function HomePage() {
         .from('products')
         .select('*');
 
-      if (queryError) {
-        throw queryError;
-      }
+      if (queryError) throw queryError;
 
       setProducts(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -401,8 +432,17 @@ function HomePage() {
   }, []);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    setSearchTerm(params.get('search') || '');
+    function syncSearchFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      setSearchTerm(params.get('search') || '');
+    }
+
+    syncSearchFromUrl();
+    window.addEventListener('popstate', syncSearchFromUrl);
+
+    return () => {
+      window.removeEventListener('popstate', syncSearchFromUrl);
+    };
   }, []);
 
   const filteredProducts = products.filter((product) => {
@@ -511,6 +551,7 @@ function HomePage() {
                 Results for <strong>“{searchTerm}”</strong>
               </p>
               <button
+                type="button"
                 className="text-link"
                 onClick={() => {
                   setSearchTerm('');
@@ -625,7 +666,15 @@ function ProductPage() {
   }, [productId]);
 
   if (loading) return <LoadingState />;
-  if (error) return <ErrorState message={error} onRetry={() => window.location.reload()} />;
+
+  if (error) {
+    return (
+      <ErrorState
+        message={error}
+        onRetry={() => window.location.reload()}
+      />
+    );
+  }
 
   const price = getProductPrice(product);
   const regularPrice = Number(product?.price || 0);
@@ -656,7 +705,9 @@ function ProductPage() {
             <div className="product-detail-price">
               <strong>{formatPrice(price)}</strong>
               {price < regularPrice && (
-                <span className="old-price">{formatPrice(regularPrice)}</span>
+                <span className="old-price">
+                  {formatPrice(regularPrice)}
+                </span>
               )}
             </div>
 
@@ -671,6 +722,7 @@ function ProductPage() {
             )}
 
             <button
+              type="button"
               className="btn btn-primary detail-add-button"
               disabled={outOfStock}
               onClick={() => addToCart(product)}
@@ -712,7 +764,7 @@ function CartPage() {
     removeFromCart,
   } = useCart();
 
-  const items = cartItems || [];
+  const items = Array.isArray(cartItems) ? cartItems : [];
 
   const subtotal = items.reduce(
     (total, item) =>
@@ -772,6 +824,7 @@ function CartPage() {
 
                   <div className="quantity-controls">
                     <button
+                      type="button"
                       onClick={() => decreaseQuantity(item.id)}
                       aria-label="Decrease quantity"
                     >
@@ -779,6 +832,7 @@ function CartPage() {
                     </button>
                     <span>{item.quantity || 1}</span>
                     <button
+                      type="button"
                       onClick={() => increaseQuantity(item.id)}
                       aria-label="Increase quantity"
                     >
@@ -794,6 +848,7 @@ function CartPage() {
                     )}
                   </strong>
                   <button
+                    type="button"
                     className="remove-item-button"
                     onClick={() => removeFromCart(item.id)}
                     aria-label={`Remove ${getProductName(item)}`}
@@ -843,7 +898,7 @@ function CartPage() {
 function CheckoutPage() {
   const { cartItems, clearCart } = useCart();
   const navigate = useNavigate();
-  const items = cartItems || [];
+  const items = Array.isArray(cartItems) ? cartItems : [];
 
   const [form, setForm] = useState({
     customer_name: '',
@@ -866,7 +921,11 @@ function CheckoutPage() {
 
   function updateField(event) {
     const { name, value } = event.target;
-    setForm((previous) => ({ ...previous, [name]: value }));
+
+    setForm((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
   }
 
   async function handleSubmit(event) {
@@ -909,6 +968,7 @@ function CheckoutPage() {
       if (orderError) throw orderError;
 
       const order = Array.isArray(data) ? data[0] : data;
+
       setSuccessOrder(order || { id: 'received' });
 
       const message = [
@@ -931,13 +991,21 @@ function CheckoutPage() {
 
       clearCart();
 
-      window.open(
-        `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`,
+      const whatsappUrl =
+        `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+
+      const whatsappWindow = window.open(
+        whatsappUrl,
         '_blank',
         'noopener,noreferrer'
       );
+
+      if (!whatsappWindow) {
+        console.info('WhatsApp could not be opened automatically.');
+      }
     } catch (err) {
       console.error('Order submission error:', err);
+
       setError(
         err?.message ||
           'We could not submit your order. Please try again or contact us on WhatsApp.'
@@ -1076,7 +1144,7 @@ function CheckoutPage() {
               />
             </label>
 
-            {error && <p className="form-error">{error}</p>}
+            {error && <p className="form-error" role="alert">{error}</p>}
 
             <button
               className="btn btn-primary checkout-submit"
