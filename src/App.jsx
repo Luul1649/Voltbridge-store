@@ -1,863 +1,1173 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
-import Admin from './Admin';
 import { useEffect, useState } from 'react';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
-  faInstagram,
-  faTiktok,
-  faFacebookF,
-} from '@fortawesome/free-brands-svg-icons';
+  Routes,
+  Route,
+  Link,
+  useParams,
+  useNavigate,
+} from 'react-router-dom';
+import {
+  ShoppingCart,
+  Search,
+  Menu,
+  X,
+  Plus,
+  Minus,
+  Trash2,
+  ArrowRight,
+  Package,
+  ShieldCheck,
+  Truck,
+  MessageCircle,
+  RefreshCw,
+  Activity,
+  ChevronRight,
+} from 'lucide-react';
+
+import Admin from './Admin';
 import { supabase } from './supabase';
+import { useCart } from './CartContext';
 import './App.css';
 
-const STORE_NAME = 'VoltBridge Technologies';
 const WHATSAPP_NUMBER = '254726147462';
-const STORE_ADDRESS = 'Bihi Tower, 4th Floor, Suite 5, Nairobi, Kenya';
+const BUSINESS_ADDRESS = 'Bihi Tower, 4th Floor, Suite 5, Nairobi';
 
-const SOCIAL_LINKS = {
-  instagram: 'https://www.instagram.com/voltbridgetechnologies/',
-  tiktok: 'https://www.tiktok.com/@voltbridgetechnologies',
-  facebook: 'https://www.facebook.com/voltbridgetechnologies/',
-};
+function formatPrice(value) {
+  const price = Number(value || 0);
 
-const CATEGORIES = [
-  'All Products',
-  'Gaming Devices',
-  'Samsung Chargers',
-  'Apple Accessories',
-];
-
-function formatPrice(price) {
-  return `KSh ${Number(price || 0).toLocaleString('en-KE')}`;
+  return new Intl.NumberFormat('en-KE', {
+    style: 'currency',
+    currency: 'KES',
+    maximumFractionDigits: 0,
+  }).format(price);
 }
 
-function getPrice(product) {
-  const price = Number(product?.price || 0);
-  const salePrice = Number(product?.sale_price || 0);
+function getProductPrice(product) {
+  const regularPrice = Number(product?.price || 0);
+  const salePrice = Number(
+    product?.discount_price ?? product?.sale_price ?? 0
+  );
 
-  return salePrice > 0 && salePrice < price ? salePrice : price;
+  return salePrice > 0 && salePrice < regularPrice
+    ? salePrice
+    : regularPrice;
 }
 
-function hasDiscount(product) {
-  const price = Number(product?.price || 0);
-  const salePrice = Number(product?.sale_price || 0);
+function getProductImage(product) {
+  if (product?.image_url) return product.image_url;
+  if (product?.image) return product.image;
+  if (product?.thumbnail) return product.thumbnail;
 
-  return salePrice > 0 && salePrice < price;
+  if (Array.isArray(product?.images) && product.images.length > 0) {
+    return product.images[0];
+  }
+
+  return '';
 }
 
-function isInStock(product) {
-  return Number(product?.stock_quantity || 0) > 0;
+function getProductName(product) {
+  return product?.name || product?.title || 'Product';
 }
 
-function whatsappLink(message) {
-  return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+function getProductStock(product) {
+  const stock = product?.stock_quantity ?? product?.stock ?? null;
+
+  if (stock === null || stock === undefined || stock === '') {
+    return null;
+  }
+
+  return Number(stock);
 }
 
-function SocialLinks() {
+function ProductImage({ product, className = '' }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const image = getProductImage(product);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [image]);
+
+  if (!image || imageFailed) {
+    return (
+      <div className={`product-image-placeholder ${className}`}>
+        <Package size={42} strokeWidth={1.4} />
+        <span>VoltBridge</span>
+      </div>
+    );
+  }
+
   return (
-    <div className="social-links">
-      <a href={SOCIAL_LINKS.instagram} target="_blank" rel="noreferrer" aria-label="Instagram">
-        <FontAwesomeIcon icon={faInstagram} />
-      </a>
-      <a href={SOCIAL_LINKS.tiktok} target="_blank" rel="noreferrer" aria-label="TikTok">
-        <FontAwesomeIcon icon={faTiktok} />
-      </a>
-      <a href={SOCIAL_LINKS.facebook} target="_blank" rel="noreferrer" aria-label="Facebook">
-        <FontAwesomeIcon icon={faFacebookF} />
-      </a>
+    <img
+      className={className}
+      src={image}
+      alt={getProductName(product)}
+      loading="lazy"
+      onError={() => setImageFailed(true)}
+    />
+  );
+}
+
+function LoadingState() {
+  return (
+    <div className="state-container" role="status">
+      <RefreshCw className="loading-icon" size={30} />
+      <h3>Loading products...</h3>
+      <p>Please wait while we fetch our products.</p>
     </div>
   );
 }
 
-function ProductCard({ product, onViewDetails, onAddToCart }) {
-  const discounted = hasDiscount(product);
-  const available = isInStock(product);
+function ErrorState({ message, onRetry }) {
+  return (
+    <div className="state-container error-state">
+      <Package size={36} />
+      <h3>Products could not be loaded</h3>
+      <p>{message}</p>
+      <button className="btn btn-primary" onClick={onRetry}>
+        <RefreshCw size={16} />
+        Try again
+      </button>
+    </div>
+  );
+}
+
+function EmptyProducts() {
+  return (
+    <div className="state-container">
+      <Package size={38} />
+      <h3>No products available yet</h3>
+      <p>Please check back soon for our latest products.</p>
+    </div>
+  );
+}
+
+function ProductCard({ product }) {
+  const { addToCart } = useCart();
+  const price = getProductPrice(product);
+  const regularPrice = Number(product?.price || 0);
+  const stock = getProductStock(product);
+  const outOfStock = stock !== null && stock <= 0;
+  const discounted = price < regularPrice;
 
   return (
     <article className="product-card">
-      <button
-        type="button"
-        className="product-image-button"
-        onClick={() => onViewDetails(product)}
-        aria-label={`View ${product.name}`}
+      <Link
+        to={`/product/${product.id}`}
+        className="product-card-image-link"
+        aria-label={`View ${getProductName(product)}`}
       >
-        <div className="product-image">
-          {product.image_url ? (
-            <img src={product.image_url} alt={product.name} loading="lazy" />
-          ) : (
-            <div className="product-placeholder">
-              <span>VB</span>
-              <small>VoltBridge</small>
-            </div>
+        <div className="product-card-image">
+          <ProductImage product={product} />
+
+          {discounted && (
+            <span className="sale-badge">Sale</span>
           )}
-          {discounted && <span className="sale-badge">SALE</span>}
-          {!available && <span className="out-of-stock-badge">Out of Stock</span>}
+
+          {outOfStock && (
+            <span className="stock-badge">Out of stock</span>
+          )}
         </div>
-      </button>
+      </Link>
 
-      <div className="product-info">
-        <span className="product-category">{product.category || 'Accessories'}</span>
-        <h3>{product.name}</h3>
+      <div className="product-card-content">
+        <Link
+          to={`/product/${product.id}`}
+          className="product-card-title"
+        >
+          {getProductName(product)}
+        </Link>
 
-        <div className="product-pricing">
-          <span className="current-price">{formatPrice(getPrice(product))}</span>
-          {discounted && <span className="original-price">{formatPrice(product.price)}</span>}
+        {product?.category && (
+          <p className="product-category">{product.category}</p>
+        )}
+
+        <div className="product-price-row">
+          <strong>{formatPrice(price)}</strong>
+
+          {discounted && (
+            <span className="old-price">
+              {formatPrice(regularPrice)}
+            </span>
+          )}
         </div>
 
-        <p className={available ? 'stock-status in-stock' : 'stock-status out'}>
-          {available ? 'In Stock' : 'Out of Stock'}
-        </p>
+        {stock !== null && (
+          <p className={`stock-status ${outOfStock ? 'out-of-stock' : ''}`}>
+            {outOfStock ? 'Currently unavailable' : `${stock} in stock`}
+          </p>
+        )}
 
-        <div className="product-actions">
-          <button type="button" className="details-button" onClick={() => onViewDetails(product)}>
-            View Details
-          </button>
-          <button
-            type="button"
-            className="add-to-cart-button"
-            disabled={!available}
-            onClick={() => onAddToCart(product)}
-          >
-            {available ? 'Add to Cart' : 'Unavailable'}
-          </button>
-        </div>
+        <button
+          className="btn btn-primary product-add-button"
+          disabled={outOfStock}
+          onClick={() => addToCart(product)}
+        >
+          <ShoppingCart size={16} />
+          {outOfStock ? 'Out of stock' : 'Add to cart'}
+        </button>
       </div>
     </article>
   );
 }
 
-function ProductDetails({ product, onClose, onAddToCart }) {
-  if (!product) return null;
+function Header() {
+  const { cartItems } = useCart();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const navigate = useNavigate();
 
-  const discounted = hasDiscount(product);
-  const available = isInStock(product);
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <section
-        className="product-details-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label={product.name}
-        onClick={(event) => event.stopPropagation()}
-      >
-        <button type="button" className="modal-close" onClick={onClose} aria-label="Close product details">
-          ×
-        </button>
-
-        <div className="details-image">
-          {product.image_url ? (
-            <img src={product.image_url} alt={product.name} />
-          ) : (
-            <div className="product-placeholder">
-              <span>VB</span>
-              <small>VoltBridge</small>
-            </div>
-          )}
-        </div>
-
-        <div className="details-content">
-          <span className="product-category">{product.category || 'Accessories'}</span>
-          <h2>{product.name}</h2>
-
-          <div className="product-pricing details-pricing">
-            <span className="current-price">{formatPrice(getPrice(product))}</span>
-            {discounted && <span className="original-price">{formatPrice(product.price)}</span>}
-          </div>
-
-          {discounted && <p className="discount-message">Special offer available!</p>}
-
-          <p className={available ? 'stock-status in-stock' : 'stock-status out'}>
-            {available ? 'In Stock' : 'Out of Stock'}
-          </p>
-
-          <p className="product-description">
-            {product.description || 'Contact us for more product information.'}
-          </p>
-
-          {available && (
-            <button
-              type="button"
-              className="add-to-cart-button details-add-button"
-              onClick={() => {
-                onAddToCart(product);
-                onClose();
-              }}
-            >
-              Add to Cart
-            </button>
-          )}
-
-          <a
-            className="whatsapp-product-link"
-            href={whatsappLink(`Hello ${STORE_NAME}, I would like to enquire about ${product.name}.`)}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Ask about this product on WhatsApp
-          </a>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function ShoppingCart({
-  isOpen,
-  onClose,
-  cart,
-  onIncrease,
-  onDecrease,
-  onRemove,
-}) {
-  const [customerName, setCustomerName] = useState('');
-  const [customerPhone, setCustomerPhone] = useState('');
-  const [deliveryAddress, setDeliveryAddress] = useState('');
-  const [customerNotes, setCustomerNotes] = useState('');
-  const [savingOrder, setSavingOrder] = useState(false);
-  const [checkoutError, setCheckoutError] = useState('');
-  const [savedOrder, setSavedOrder] = useState(null);
-
-  useEffect(() => {
-    if (!isOpen) {
-      setCheckoutError('');
-      setSavedOrder(null);
-    }
-  }, [isOpen]);
-
-  if (!isOpen) return null;
-
-  const total = cart.reduce(
-    (sum, item) => sum + getPrice(item) * item.quantity,
+  const cartCount = (cartItems || []).reduce(
+    (total, item) => total + Number(item.quantity || 1),
     0
   );
 
-  async function submitOrder(event) {
+  function handleSearch(event) {
     event.preventDefault();
-    setCheckoutError('');
 
-    if (!cart.length) {
-      setCheckoutError('Your cart is empty.');
-      return;
-    }
+    const query = searchTerm.trim();
 
-    if (!customerName.trim() || !customerPhone.trim()) {
-      setCheckoutError('Please enter your name and phone number.');
-      return;
-    }
-
-    setSavingOrder(true);
-
-    try {
-      const { data, error } = await supabase.rpc('place_store_order', {
-        p_customer_name: customerName.trim(),
-        p_customer_phone: customerPhone.trim(),
-        p_delivery_address: deliveryAddress.trim(),
-        p_customer_notes: customerNotes.trim(),
-        p_items: cart.map((item) => ({
-          product_id: item.id,
-          quantity: item.quantity,
-        })),
-      });
-
-      if (error) throw error;
-
-      if (!data?.order_number || !data?.order_id) {
-        throw new Error('The order was not confirmed by the database. Please contact us before trying again.');
-      }
-
-      setSavedOrder(data);
-
-      const message = [
-        `Hello ${STORE_NAME}, I have placed an order on the website.`,
-        '',
-        `Order number: VB-${data.order_number}`,
-        `Customer: ${customerName.trim()}`,
-        `Phone: ${customerPhone.trim()}`,
-        ...(deliveryAddress.trim() ? [`Delivery address: ${deliveryAddress.trim()}`] : []),
-        '',
-        ...cart.map(
-          (item) =>
-            `${item.name} x ${item.quantity} - ${formatPrice(
-              getPrice(item) * item.quantity
-            )}`
-        ),
-        '',
-        `Order total: ${formatPrice(data.subtotal)}`,
-        ...(customerNotes.trim() ? ['', `Notes: ${customerNotes.trim()}`] : []),
-        '',
-        'Please confirm my order and delivery details.',
-      ].join('\n');
-
-      // Open WhatsApp only after Supabase confirms the order was saved.
-      window.location.assign(whatsappLink(message));
-    } catch (error) {
-      console.error('Unable to save order:', error);
-      setCheckoutError(
-        error?.message ||
-          'We could not save your order. Please try again or contact us on WhatsApp.'
-      );
-    } finally {
-      setSavingOrder(false);
+    if (query) {
+      navigate(`/?search=${encodeURIComponent(query)}#products`);
+      setSearchOpen(false);
+      setMenuOpen(false);
     }
   }
 
   return (
-    <div className="cart-overlay" onClick={onClose}>
-      <aside
-        className="shopping-cart"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Shopping cart"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="cart-header">
-          <h2>Your Cart</h2>
-          <button type="button" className="modal-close" onClick={onClose} aria-label="Close cart">
-            ×
-          </button>
-        </div>
-
-        {cart.length === 0 ? (
-          <div className="empty-cart">
-            <p>Your cart is empty.</p>
-            <button type="button" onClick={onClose}>Continue Shopping</button>
-          </div>
-        ) : (
-          <>
-            <div className="cart-items">
-              {cart.map((item) => (
-                <div className="cart-item" key={item.id}>
-                  <div className="cart-item-image">
-                    {item.image_url ? <img src={item.image_url} alt={item.name} /> : <span>VB</span>}
-                  </div>
-
-                  <div className="cart-item-info">
-                    <h3>{item.name}</h3>
-                    <p>{formatPrice(getPrice(item))}</p>
-
-                    <div className="quantity-controls">
-                      <button
-                        type="button"
-                        onClick={() => onDecrease(item.id)}
-                        aria-label={`Decrease quantity of ${item.name}`}
-                      >
-                        −
-                      </button>
-                      <span>{item.quantity}</span>
-                      <button
-                        type="button"
-                        onClick={() => onIncrease(item.id)}
-                        aria-label={`Increase quantity of ${item.name}`}
-                        disabled={item.quantity >= Number(item.stock_quantity || 0)}
-                      >
-                        +
-                      </button>
-                    </div>
-
-                    <button type="button" className="remove-item" onClick={() => onRemove(item.id)}>
-                      Remove
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <form className="cart-footer" onSubmit={submitOrder}>
-              <div className="cart-total">
-                <span>Estimated total</span>
-                <strong>{formatPrice(total)}</strong>
-              </div>
-
-              <p className="checkout-note">
-                Enter your details. We will save your order before opening WhatsApp.
-                Final prices and availability are verified when you submit.
-              </p>
-
-              <label htmlFor="order-customer-name">Full name *</label>
-              <input
-                id="order-customer-name"
-                name="customerName"
-                type="text"
-                autoComplete="name"
-                maxLength={120}
-                value={customerName}
-                onChange={(event) => setCustomerName(event.target.value)}
-                required
-              />
-
-              <label htmlFor="order-customer-phone">Phone number *</label>
-              <input
-                id="order-customer-phone"
-                name="customerPhone"
-                type="tel"
-                autoComplete="tel"
-                maxLength={40}
-                value={customerPhone}
-                onChange={(event) => setCustomerPhone(event.target.value)}
-                required
-              />
-
-              <label htmlFor="order-delivery-address">Delivery address (optional)</label>
-              <textarea
-                id="order-delivery-address"
-                name="deliveryAddress"
-                autoComplete="street-address"
-                maxLength={500}
-                rows={2}
-                value={deliveryAddress}
-                onChange={(event) => setDeliveryAddress(event.target.value)}
-              />
-
-              <label htmlFor="order-customer-notes">Order notes (optional)</label>
-              <textarea
-                id="order-customer-notes"
-                name="customerNotes"
-                maxLength={1000}
-                rows={2}
-                value={customerNotes}
-                onChange={(event) => setCustomerNotes(event.target.value)}
-              />
-
-              {checkoutError && (
-                <p className="error-message" role="alert">{checkoutError}</p>
-              )}
-
-              {savedOrder && (
-                <p role="status">
-                  Order VB-{savedOrder.order_number} saved successfully.
-                </p>
-              )}
-
-              <button type="submit" className="checkout-button" disabled={savingOrder}>
-                {savingOrder ? 'Saving Order...' : 'Save Order & Continue to WhatsApp'}
-              </button>
-
-              <p className="checkout-note">
-                Submitting creates an order record. Your order is not confirmed until
-                VoltBridge contacts you.
-              </p>
-            </form>
-          </>
-        )}
-      </aside>
-    </div>
-  );
-}
-
-function Storefront() {
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [fetchError, setFetchError] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('All Products');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedProduct, setSelectedProduct] = useState(null);
-  const [cart, setCart] = useState([]);
-  const [cartOpen, setCartOpen] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadProducts() {
-      setLoading(true);
-      setFetchError('');
-
-      try {
-        const { data, error } = await supabase
-          .from('products')
-          .select(
-            'id, name, description, category, price, sale_price, stock_quantity, image_url, created_at'
-          )
-          .eq('is_active', true)
-          .gt('price', 0)
-          .order('created_at', { ascending: false });
-
-        if (error) throw error;
-        if (isMounted) setProducts(data || []);
-      } catch (error) {
-        console.error('Unable to load products:', error);
-        if (isMounted) {
-          setFetchError(
-            'We could not load products right now. Please refresh the page or contact us on WhatsApp.'
-          );
-        }
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    }
-
-    loadProducts();
-    return () => { isMounted = false; };
-  }, []);
-
-  function addToCart(product) {
-    if (!isInStock(product)) return;
-
-    setCart((currentCart) => {
-      const existing = currentCart.find((item) => item.id === product.id);
-
-      if (existing) {
-        if (existing.quantity >= Number(product.stock_quantity || 0)) return currentCart;
-
-        return currentCart.map((item) =>
-          item.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item
-        );
-      }
-
-      return [...currentCart, { ...product, quantity: 1 }];
-    });
-
-    setCartOpen(true);
-  }
-
-  function increaseQuantity(productId) {
-    setCart((currentCart) =>
-      currentCart.map((item) => {
-        if (item.id !== productId) return item;
-        if (item.quantity >= Number(item.stock_quantity || 0)) return item;
-        return { ...item, quantity: item.quantity + 1 };
-      })
-    );
-  }
-
-  function decreaseQuantity(productId) {
-    setCart((currentCart) =>
-      currentCart
-        .map((item) =>
-          item.id === productId ? { ...item, quantity: item.quantity - 1 } : item
-        )
-        .filter((item) => item.quantity > 0)
-    );
-  }
-
-  function removeFromCart(productId) {
-    setCart((currentCart) => currentCart.filter((item) => item.id !== productId));
-  }
-
-  const filteredProducts = products.filter((product) => {
-    const matchesCategory =
-      selectedCategory === 'All Products' || product.category === selectedCategory;
-    const search = searchTerm.trim().toLowerCase();
-    const matchesSearch =
-      !search ||
-      product.name?.toLowerCase().includes(search) ||
-      product.description?.toLowerCase().includes(search) ||
-      product.category?.toLowerCase().includes(search);
-
-    return matchesCategory && matchesSearch;
-  });
-
-  const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
-
-  return (
-    <div className="storefront">
+    <>
       <div className="announcement-bar">
-        <p>Original accessories • Nairobi delivery • Countrywide shipping</p>
+        Original Samsung and Apple chargers & phone accessories.
+        <span> Free Nairobi delivery on eligible orders.</span>
       </div>
 
       <header className="site-header">
-        <a href="/" className="brand-logo" aria-label="VoltBridge home">
-          <span className="brand-symbol">VB</span>
-          <span className="brand-text">
-            <strong>VoltBridge</strong>
-            <small>TECHNOLOGIES</small>
-          </span>
-        </a>
+        <div className="header-inner">
+          <button
+            className="icon-button mobile-menu-button"
+            onClick={() => setMenuOpen(!menuOpen)}
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+          >
+            {menuOpen ? <X size={22} /> : <Menu size={22} />}
+          </button>
 
-        <button
-          type="button"
-          className="mobile-menu-toggle"
-          onClick={() => setMobileMenuOpen((open) => !open)}
-          aria-label="Toggle navigation"
-        >
-          ☰
-        </button>
+          <Link to="/" className="brand-logo" onClick={() => setMenuOpen(false)}>
+            <span className="brand-mark">
+              <Package size={25} />
+            </span>
+            <span className="brand-name">
+              VoltBridge
+              <small>TECHNOLOGIES</small>
+            </span>
+          </Link>
 
-        <nav className={mobileMenuOpen ? 'main-nav open' : 'main-nav'}>
-          <a href="#home" onClick={() => setMobileMenuOpen(false)}>Home</a>
-          <a href="#products" onClick={() => setMobileMenuOpen(false)}>Products</a>
-          <a href="#about" onClick={() => setMobileMenuOpen(false)}>About Us</a>
-          <a href="#contact" onClick={() => setMobileMenuOpen(false)}>Contact</a>
-        </nav>
+          <nav className={`main-nav ${menuOpen ? 'nav-open' : ''}`}>
+            <Link to="/" onClick={() => setMenuOpen(false)}>
+              Home
+            </Link>
+            <a href="/#products" onClick={() => setMenuOpen(false)}>
+              Shop
+            </a>
+            <a href="/#about" onClick={() => setMenuOpen(false)}>
+              About us
+            </a>
+            <a href="/#contact" onClick={() => setMenuOpen(false)}>
+              Contact
+            </a>
+          </nav>
 
-        <button type="button" className="header-cart-button" onClick={() => setCartOpen(true)}>
-          Cart <span>{cartCount}</span>
-        </button>
+          <div className="header-actions">
+            <button
+              className="icon-button"
+              aria-label="Search products"
+              onClick={() => setSearchOpen(!searchOpen)}
+            >
+              <Search size={21} />
+            </button>
+
+            <Link to="/cart" className="cart-link" aria-label="Shopping cart">
+              <ShoppingCart size={21} />
+              <span>Cart</span>
+              <span className="cart-count">{cartCount}</span>
+            </Link>
+          </div>
+        </div>
+
+        {searchOpen && (
+          <form className="search-form" onSubmit={handleSearch}>
+            <input
+              type="search"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Search phone accessories..."
+              aria-label="Search products"
+              autoFocus
+            />
+            <button className="btn btn-primary" type="submit">
+              Search
+            </button>
+          </form>
+        )}
       </header>
+    </>
+  );
+}
 
+function Footer() {
+  return (
+    <footer className="site-footer" id="contact">
+      <div className="footer-inner">
+        <div className="footer-brand">
+          <Link to="/" className="brand-logo footer-logo">
+            <span className="brand-mark">
+              <Package size={24} />
+            </span>
+            <span className="brand-name">
+              VoltBridge
+              <small>TECHNOLOGIES</small>
+            </span>
+          </Link>
+
+          <p>
+            Quality phone accessories, dependable service, and convenient
+            shopping in Nairobi and across Kenya.
+          </p>
+        </div>
+
+        <div className="footer-column">
+          <h4>Shop</h4>
+          <Link to="/#products">All products</Link>
+          <Link to="/cart">Shopping cart</Link>
+        </div>
+
+        <div className="footer-column">
+          <h4>Customer service</h4>
+          <a href={`https://wa.me/${WHATSAPP_NUMBER}`} target="_blank" rel="noreferrer">
+            WhatsApp enquiries
+          </a>
+          <p>{BUSINESS_ADDRESS}</p>
+        </div>
+      </div>
+
+      <div className="footer-bottom">
+        <p>
+          © {new Date().getFullYear()} VoltBridge Technologies. All rights
+          reserved.
+        </p>
+      </div>
+    </footer>
+  );
+}
+
+function HomePage() {
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+
+  async function loadProducts() {
+    setLoading(true);
+    setError('');
+
+    try {
+      if (!supabase) {
+        throw new Error(
+          'Supabase is not configured. Check your project .env file and restart the development server.'
+        );
+      }
+
+      const { data, error: queryError } = await supabase
+        .from('products')
+        .select('*');
+
+      if (queryError) {
+        throw queryError;
+      }
+
+      setProducts(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Product loading error:', err);
+      setError(
+        err?.message ||
+          'Unable to load products. Check your Supabase connection and products table.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadProducts();
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setSearchTerm(params.get('search') || '');
+  }, []);
+
+  const filteredProducts = products.filter((product) => {
+    const query = searchTerm.trim().toLowerCase();
+
+    if (!query) return true;
+
+    const name = getProductName(product).toLowerCase();
+    const category = String(product?.category || '').toLowerCase();
+    const description = String(product?.description || '').toLowerCase();
+
+    return (
+      name.includes(query) ||
+      category.includes(query) ||
+      description.includes(query)
+    );
+  });
+
+  return (
+    <>
       <main>
-        <section className="hero-section" id="home">
+        <section className="hero-section">
           <div className="hero-content">
-            <span className="hero-eyebrow">YOUR TECH. YOUR CONNECTION.</span>
-            <h1>Power Your World with <span>VoltBridge</span></h1>
+            <span className="eyebrow">WELCOME TO VOLTBRIDGE</span>
+            <h1>
+              Power your world.
+              <br />
+              <span>Connect with confidence.</span>
+            </h1>
             <p>
-              Discover quality phone accessories, Samsung chargers, Apple
-              accessories and gaming devices at VoltBridge Technologies.
+              Discover quality phone accessories, reliable chargers, power
+              banks, audio essentials, and more.
             </p>
+
             <div className="hero-actions">
-              <a href="#products" className="primary-button">Shop Products</a>
+              <a href="#products" className="btn btn-primary">
+                Shop products <ArrowRight size={18} />
+              </a>
               <a
-                href={whatsappLink(`Hello ${STORE_NAME}, I would like to make an enquiry.`)}
+                href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(
+                  'Hello VoltBridge Technologies, I would like to make an enquiry.'
+                )}`}
                 target="_blank"
                 rel="noreferrer"
-                className="secondary-button"
+                className="btn btn-secondary"
               >
-                Chat with Us
+                <MessageCircle size={18} />
+                Contact us
               </a>
             </div>
-            <div className="hero-benefits">
-              <span>✓ Quality accessories</span>
-              <span>✓ Retail and wholesale</span>
-              <span>✓ Nairobi delivery</span>
-            </div>
-          </div>
 
-          <div className="hero-visual" aria-label="VoltBridge technology">
-            <div className="hero-circle">
-              <div className="hero-device">
-                <span>VB</span>
-                <strong>VOLTBRIDGE</strong>
-                <small>TECHNOLOGIES</small>
-              </div>
-              <div className="floating-label label-one">POWER</div>
-              <div className="floating-label label-two">CONNECT</div>
-              <div className="floating-label label-three">PLAY</div>
+            <div className="hero-trust">
+              <span><ShieldCheck size={17} /> Quality products</span>
+              <span><Truck size={17} /> Kenya-wide shipping</span>
             </div>
           </div>
         </section>
 
-        <section className="benefits-strip">
-          <div><span className="benefit-icon">✓</span><div><strong>Quality Products</strong><p>Accessories for everyday use</p></div></div>
-          <div><span className="benefit-icon">↗</span><div><strong>Countrywide Shipping</strong><p>Contact us for delivery options</p></div></div>
-          <div><span className="benefit-icon">▣</span><div><strong>WhatsApp Orders</strong><p>Easy ordering and enquiries</p></div></div>
-          <div><span className="benefit-icon">◇</span><div><strong>Retail & Wholesale</strong><p>Ask us about bulk orders</p></div></div>
+        <section className="benefits-section">
+          <div className="benefit-item">
+            <ShieldCheck size={27} />
+            <div>
+              <h3>Quality you can trust</h3>
+              <p>Carefully selected accessories</p>
+            </div>
+          </div>
+
+          <div className="benefit-item">
+            <Truck size={27} />
+            <div>
+              <h3>Convenient delivery</h3>
+              <p>Nairobi and countrywide shipping</p>
+            </div>
+          </div>
+
+          <div className="benefit-item">
+            <MessageCircle size={27} />
+            <div>
+              <h3>Easy ordering</h3>
+              <p>Get help through WhatsApp</p>
+            </div>
+          </div>
         </section>
 
         <section className="products-section" id="products">
           <div className="section-heading">
-            <span className="section-eyebrow">OUR COLLECTION</span>
-            <h2>Explore Our Products</h2>
-            <p>Find accessories that keep your devices connected and ready.</p>
-          </div>
-
-          <div className="product-toolbar">
-            <div className="category-filters">
-              {CATEGORIES.map((category) => (
-                <button
-                  type="button"
-                  key={category}
-                  className={selectedCategory === category ? 'category-active' : ''}
-                  onClick={() => setSelectedCategory(category)}
-                >
-                  {category}
-                </button>
-              ))}
+            <div>
+              <span className="eyebrow">OUR COLLECTION</span>
+              <h2>Explore our products</h2>
+              <p>Find the accessories you need for everyday connection.</p>
             </div>
 
-            <input
-              type="search"
-              className="product-search"
-              placeholder="Search products..."
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              aria-label="Search products"
-            />
+            <a
+              href={`https://wa.me/${WHATSAPP_NUMBER}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-link"
+            >
+              Need help? <ChevronRight size={17} />
+            </a>
           </div>
+
+          {searchTerm && (
+            <div className="search-results-heading">
+              <p>
+                Results for <strong>“{searchTerm}”</strong>
+              </p>
+              <button
+                className="text-link"
+                onClick={() => {
+                  setSearchTerm('');
+                  window.history.replaceState({}, '', '/#products');
+                }}
+              >
+                Clear search
+              </button>
+            </div>
+          )}
 
           {loading ? (
-            <div className="products-message"><div className="loading-spinner" /><p>Loading products...</p></div>
-          ) : fetchError ? (
-            <div className="products-message error-message">
-              <p>{fetchError}</p>
-              <button type="button" onClick={() => window.location.reload()}>Try Again</button>
-            </div>
+            <LoadingState />
+          ) : error ? (
+            <ErrorState message={error} onRetry={loadProducts} />
           ) : filteredProducts.length === 0 ? (
-            <div className="products-message">
-              <h3>No products found</h3>
-              <p>Try another search or category, or contact us for assistance.</p>
-              <a
-                href={whatsappLink(`Hello ${STORE_NAME}, I would like to enquire about your available products.`)}
-                target="_blank"
-                rel="noreferrer"
-                className="primary-button"
-              >
-                Ask on WhatsApp
-              </a>
-            </div>
+            searchTerm ? (
+              <div className="state-container">
+                <Search size={36} />
+                <h3>No matching products found</h3>
+                <p>Try another product name or category.</p>
+              </div>
+            ) : (
+              <EmptyProducts />
+            )
           ) : (
             <div className="products-grid">
               {filteredProducts.map((product) => (
-                <ProductCard
-                  key={product.id}
-                  product={product}
-                  onViewDetails={setSelectedProduct}
-                  onAddToCart={addToCart}
-                />
+                <ProductCard key={product.id} product={product} />
               ))}
             </div>
           )}
         </section>
 
-        <section className="wholesale-banner">
-          <div>
-            <span className="section-eyebrow">BUSINESS CUSTOMERS</span>
-            <h2>Buying in Bulk?</h2>
-            <p>
-              Contact VoltBridge Technologies to enquire about wholesale
-              orders, product availability and bulk pricing.
-            </p>
-          </div>
-          <a
-            href={whatsappLink(`Hello ${STORE_NAME}, I am interested in wholesale prices and bulk orders.`)}
-            target="_blank"
-            rel="noreferrer"
-            className="wholesale-button"
-          >
-            Enquire About Wholesale
-          </a>
-        </section>
-
         <section className="about-section" id="about">
           <div className="about-content">
-            <span className="section-eyebrow">ABOUT VOLTBRIDGE</span>
-            <h2>Your Connection to Quality Technology</h2>
+            <span className="eyebrow">WHY VOLTBRIDGE?</span>
+            <h2>Accessories for your everyday connections.</h2>
             <p>
-              VoltBridge Technologies provides phone accessories, charging
-              solutions and technology products for customers in Nairobi and
-              across Kenya.
-            </p>
-            <p>
-              Whether you are shopping for yourself or sourcing products for
-              your business, contact our team for product information,
-              availability and ordering assistance.
+              We make shopping for phone accessories straightforward, with
+              convenient ordering, helpful customer support, and delivery
+              options for customers in Nairobi and beyond.
             </p>
             <a
-              href={whatsappLink(`Hello ${STORE_NAME}, I would like to know more about your products.`)}
+              className="btn btn-primary"
+              href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(
+                'Hello, I would like to enquire about your products.'
+              )}`}
               target="_blank"
               rel="noreferrer"
-              className="primary-button"
             >
-              Contact Our Team
+              Talk to our team <ArrowRight size={18} />
             </a>
-          </div>
-        </section>
-
-        <section className="contact-section" id="contact">
-          <div className="section-heading">
-            <span className="section-eyebrow">GET IN TOUCH</span>
-            <h2>We're Here to Help</h2>
-            <p>Contact us about products, orders, delivery or wholesale.</p>
-          </div>
-
-          <div className="contact-grid">
-            <div className="contact-card">
-              <span className="contact-icon">☎</span>
-              <h3>Call or WhatsApp</h3>
-              <p>0794 546 686</p>
-              <a href="tel:+254794546686">Call Us</a>
-              <a href={whatsappLink(`Hello ${STORE_NAME}, I need assistance.`)} target="_blank" rel="noreferrer">WhatsApp Us</a>
-            </div>
-
-            <div className="contact-card">
-              <span className="contact-icon">⌖</span>
-              <h3>Visit Us</h3>
-              <p>{STORE_ADDRESS}</p>
-              <a href="https://www.google.com/maps/search/?api=1&query=Bihi+Tower+Nairobi+Kenya" target="_blank" rel="noreferrer">
-                Find Our Location
-              </a>
-            </div>
-
-            <div className="contact-card">
-              <span className="contact-icon">◷</span>
-              <h3>Ordering</h3>
-              <p>Contact us to confirm availability and delivery options.</p>
-              <a href={whatsappLink(`Hello ${STORE_NAME}, I would like to place an order.`)} target="_blank" rel="noreferrer">
-                Start an Order
-              </a>
-            </div>
           </div>
         </section>
       </main>
 
-      <footer className="site-footer">
-        <div className="footer-main">
-          <div className="footer-brand">
-            <a href="#home" className="brand-logo">
-              <span className="brand-symbol">VB</span>
-              <span className="brand-text"><strong>VoltBridge</strong><small>TECHNOLOGIES</small></span>
-            </a>
-            <p>Your connection to quality phone accessories and technology products in Kenya.</p>
-            <SocialLinks />
-          </div>
-
-          <div className="footer-column">
-            <h3>Quick Links</h3>
-            <a href="#home">Home</a>
-            <a href="#products">Products</a>
-            <a href="#about">About Us</a>
-            <a href="#contact">Contact</a>
-          </div>
-
-          <div className="footer-column">
-            <h3>Customer Support</h3>
-            <a href={whatsappLink(`Hello ${STORE_NAME}, I need help with an order.`)} target="_blank" rel="noreferrer">Orders & Enquiries</a>
-            <a href={whatsappLink(`Hello ${STORE_NAME}, I would like to ask about wholesale orders.`)} target="_blank" rel="noreferrer">Wholesale</a>
-            <a href="#contact">Delivery Information</a>
-          </div>
-
-          <div className="footer-column">
-            <h3>Our Location</h3>
-            <p>{STORE_ADDRESS}</p>
-            <p>Kenya</p>
-          </div>
-        </div>
-
-        <div className="footer-bottom">
-          <p>© {new Date().getFullYear()} {STORE_NAME}. All rights reserved.</p>
-          <p>Quality. Connection. Technology.</p>
-        </div>
-      </footer>
-
-      <ProductDetails
-        product={selectedProduct}
-        onClose={() => setSelectedProduct(null)}
-        onAddToCart={addToCart}
-      />
-
-      <ShoppingCart
-        isOpen={cartOpen}
-        onClose={() => setCartOpen(false)}
-        cart={cart}
-        onIncrease={increaseQuantity}
-        onDecrease={decreaseQuantity}
-        onRemove={removeFromCart}
-      />
-
-      <a
-        className="floating-whatsapp"
-        href={whatsappLink(`Hello ${STORE_NAME}, I would like to make an enquiry.`)}
-        target="_blank"
-        rel="noreferrer"
-        aria-label="Chat with VoltBridge on WhatsApp"
-      >
-        WhatsApp
-      </a>
-    </div>
+      <Footer />
+    </>
   );
 }
 
-function App() {
+function ProductPage() {
+  const { productId } = useParams();
+  const { addToCart } = useCart();
+  const [product, setProduct] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProduct() {
+      setLoading(true);
+      setError('');
+      setProduct(null);
+
+      try {
+        if (!supabase) {
+          throw new Error('Supabase is not configured. Check your .env file.');
+        }
+
+        const { data, error: queryError } = await supabase
+          .from('products')
+          .select('*')
+          .eq('id', productId)
+          .maybeSingle();
+
+        if (queryError) throw queryError;
+
+        if (!data) {
+          throw new Error('This product could not be found.');
+        }
+
+        if (!cancelled) setProduct(data);
+      } catch (err) {
+        console.error('Product detail loading error:', err);
+
+        if (!cancelled) {
+          setError(err?.message || 'Unable to load this product.');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadProduct();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [productId]);
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState message={error} onRetry={() => window.location.reload()} />;
+
+  const price = getProductPrice(product);
+  const regularPrice = Number(product?.price || 0);
+  const stock = getProductStock(product);
+  const outOfStock = stock !== null && stock <= 0;
+
+  return (
+    <>
+      <main className="product-detail-page">
+        <div className="breadcrumb">
+          <Link to="/">Home</Link>
+          <ChevronRight size={15} />
+          <span>{getProductName(product)}</span>
+        </div>
+
+        <div className="product-detail-layout">
+          <div className="product-detail-image">
+            <ProductImage product={product} />
+          </div>
+
+          <div className="product-detail-info">
+            {product?.category && (
+              <span className="eyebrow">{product.category}</span>
+            )}
+
+            <h1>{getProductName(product)}</h1>
+
+            <div className="product-detail-price">
+              <strong>{formatPrice(price)}</strong>
+              {price < regularPrice && (
+                <span className="old-price">{formatPrice(regularPrice)}</span>
+              )}
+            </div>
+
+            {product?.description && (
+              <p className="product-description">{product.description}</p>
+            )}
+
+            {stock !== null && (
+              <p className={`stock-status ${outOfStock ? 'out-of-stock' : ''}`}>
+                {outOfStock ? 'Out of stock' : `${stock} available`}
+              </p>
+            )}
+
+            <button
+              className="btn btn-primary detail-add-button"
+              disabled={outOfStock}
+              onClick={() => addToCart(product)}
+            >
+              <ShoppingCart size={18} />
+              {outOfStock ? 'Out of stock' : 'Add to cart'}
+            </button>
+
+            <a
+              className="btn btn-secondary detail-whatsapp-button"
+              href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(
+                `Hello VoltBridge Technologies, I would like to enquire about ${getProductName(product)}.`
+              )}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <MessageCircle size={18} />
+              Ask on WhatsApp
+            </a>
+
+            <div className="detail-benefits">
+              <p><ShieldCheck size={18} /> Quality accessories</p>
+              <p><Truck size={18} /> Delivery options available</p>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <Footer />
+    </>
+  );
+}
+
+function CartPage() {
+  const {
+    cartItems,
+    increaseQuantity,
+    decreaseQuantity,
+    removeFromCart,
+  } = useCart();
+
+  const items = cartItems || [];
+
+  const subtotal = items.reduce(
+    (total, item) =>
+      total + getProductPrice(item) * Number(item.quantity || 1),
+    0
+  );
+
+  if (items.length === 0) {
+    return (
+      <>
+        <main className="cart-page">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">YOUR SELECTION</span>
+              <h1>Your shopping cart</h1>
+            </div>
+          </div>
+
+          <div className="state-container">
+            <ShoppingCart size={42} />
+            <h3>Your cart is empty</h3>
+            <p>Explore our products and add something you need.</p>
+            <Link to="/" className="btn btn-primary">
+              Continue shopping <ArrowRight size={17} />
+            </Link>
+          </div>
+        </main>
+        <Footer />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <main className="cart-page">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">YOUR SELECTION</span>
+            <h1>Your shopping cart</h1>
+            <p>Review your items before checking out.</p>
+          </div>
+        </div>
+
+        <div className="cart-layout">
+          <div className="cart-items-list">
+            {items.map((item) => (
+              <article className="cart-item" key={item.id}>
+                <Link to={`/product/${item.id}`} className="cart-item-image">
+                  <ProductImage product={item} />
+                </Link>
+
+                <div className="cart-item-info">
+                  <Link to={`/product/${item.id}`} className="cart-item-name">
+                    {getProductName(item)}
+                  </Link>
+                  <p>{formatPrice(getProductPrice(item))}</p>
+
+                  <div className="quantity-controls">
+                    <button
+                      onClick={() => decreaseQuantity(item.id)}
+                      aria-label="Decrease quantity"
+                    >
+                      <Minus size={15} />
+                    </button>
+                    <span>{item.quantity || 1}</span>
+                    <button
+                      onClick={() => increaseQuantity(item.id)}
+                      aria-label="Increase quantity"
+                    >
+                      <Plus size={15} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="cart-item-end">
+                  <strong>
+                    {formatPrice(
+                      getProductPrice(item) * Number(item.quantity || 1)
+                    )}
+                  </strong>
+                  <button
+                    className="remove-item-button"
+                    onClick={() => removeFromCart(item.id)}
+                    aria-label={`Remove ${getProductName(item)}`}
+                  >
+                    <Trash2 size={17} />
+                  </button>
+                </div>
+              </article>
+            ))}
+
+            <Link to="/" className="text-link continue-shopping">
+              <ArrowRight size={17} />
+              Continue shopping
+            </Link>
+          </div>
+
+          <aside className="order-summary">
+            <h2>Order summary</h2>
+            <div className="summary-row">
+              <span>Subtotal</span>
+              <strong>{formatPrice(subtotal)}</strong>
+            </div>
+            <p className="summary-note">
+              Delivery charges, if applicable, will be confirmed during order
+              processing.
+            </p>
+            <Link to="/checkout" className="btn btn-primary checkout-button">
+              Proceed to checkout <ArrowRight size={17} />
+            </Link>
+            <a
+              href={`https://wa.me/${WHATSAPP_NUMBER}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-link summary-whatsapp"
+            >
+              <MessageCircle size={17} /> Need help?
+            </a>
+          </aside>
+        </div>
+      </main>
+
+      <Footer />
+    </>
+  );
+}
+
+function CheckoutPage() {
+  const { cartItems, clearCart } = useCart();
+  const navigate = useNavigate();
+  const items = cartItems || [];
+
+  const [form, setForm] = useState({
+    customer_name: '',
+    phone: '',
+    email: '',
+    delivery_address: '',
+    notes: '',
+    payment_method: 'mpesa',
+  });
+
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [successOrder, setSuccessOrder] = useState(null);
+
+  const subtotal = items.reduce(
+    (total, item) =>
+      total + getProductPrice(item) * Number(item.quantity || 1),
+    0
+  );
+
+  function updateField(event) {
+    const { name, value } = event.target;
+    setForm((previous) => ({ ...previous, [name]: value }));
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setError('');
+
+    if (items.length === 0) {
+      setError('Your cart is empty.');
+      return;
+    }
+
+    if (!supabase) {
+      setError('Supabase is not configured. Please check your .env file.');
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      const orderItems = items.map((item) => ({
+        product_id: item.id,
+        product_name: getProductName(item),
+        quantity: Number(item.quantity || 1),
+        unit_price: getProductPrice(item),
+      }));
+
+      const { data, error: orderError } = await supabase.rpc(
+        'place_store_order',
+        {
+          p_customer_name: form.customer_name.trim(),
+          p_phone: form.phone.trim(),
+          p_email: form.email.trim() || null,
+          p_delivery_address: form.delivery_address.trim(),
+          p_notes: form.notes.trim() || null,
+          p_payment_method: form.payment_method,
+          p_items: orderItems,
+        }
+      );
+
+      if (orderError) throw orderError;
+
+      const order = Array.isArray(data) ? data[0] : data;
+      setSuccessOrder(order || { id: 'received' });
+
+      const message = [
+        'Hello VoltBridge Technologies, I have placed an order.',
+        `Order reference: ${order?.order_number || order?.id || 'Received'}`,
+        `Name: ${form.customer_name}`,
+        `Phone: ${form.phone}`,
+        `Delivery address: ${form.delivery_address}`,
+        `Payment method: ${form.payment_method}`,
+        '',
+        ...items.map(
+          (item) =>
+            `${getProductName(item)} x${item.quantity || 1} — ${formatPrice(
+              getProductPrice(item) * Number(item.quantity || 1)
+            )}`
+        ),
+        '',
+        `Subtotal: ${formatPrice(subtotal)}`,
+      ].join('\n');
+
+      clearCart();
+
+      window.open(
+        `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`,
+        '_blank',
+        'noopener,noreferrer'
+      );
+    } catch (err) {
+      console.error('Order submission error:', err);
+      setError(
+        err?.message ||
+          'We could not submit your order. Please try again or contact us on WhatsApp.'
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (successOrder) {
+    return (
+      <>
+        <main className="checkout-page">
+          <div className="state-container success-state">
+            <ShieldCheck size={44} />
+            <h1>Thank you for your order!</h1>
+            <p>Your order has been submitted.</p>
+            <p>
+              Reference:{' '}
+              <strong>
+                {successOrder.order_number || successOrder.id}
+              </strong>
+            </p>
+            <p>Contact us on WhatsApp if you need assistance.</p>
+            <Link to="/" className="btn btn-primary">
+              Continue shopping
+            </Link>
+          </div>
+        </main>
+        <Footer />
+      </>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <>
+        <main className="checkout-page">
+          <div className="state-container">
+            <ShoppingCart size={40} />
+            <h2>Your cart is empty</h2>
+            <p>Add products before proceeding to checkout.</p>
+            <Link to="/" className="btn btn-primary">
+              Browse products
+            </Link>
+          </div>
+        </main>
+        <Footer />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <main className="checkout-page">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">ALMOST THERE</span>
+            <h1>Checkout</h1>
+            <p>Enter your contact and delivery information.</p>
+          </div>
+        </div>
+
+        <div className="checkout-layout">
+          <form className="checkout-form" onSubmit={handleSubmit}>
+            <h2>Delivery information</h2>
+
+            <label>
+              Full name *
+              <input
+                name="customer_name"
+                value={form.customer_name}
+                onChange={updateField}
+                required
+                autoComplete="name"
+              />
+            </label>
+
+            <label>
+              Phone number *
+              <input
+                name="phone"
+                type="tel"
+                value={form.phone}
+                onChange={updateField}
+                required
+                autoComplete="tel"
+              />
+            </label>
+
+            <label>
+              Email address (optional)
+              <input
+                name="email"
+                type="email"
+                value={form.email}
+                onChange={updateField}
+                autoComplete="email"
+              />
+            </label>
+
+            <label>
+              Delivery address *
+              <textarea
+                name="delivery_address"
+                value={form.delivery_address}
+                onChange={updateField}
+                required
+                rows={3}
+                placeholder="Estate, building, town, and other directions"
+              />
+            </label>
+
+            <label>
+              Payment method *
+              <select
+                name="payment_method"
+                value={form.payment_method}
+                onChange={updateField}
+                required
+              >
+                <option value="mpesa">M-Pesa</option>
+                <option value="cash_on_delivery">Pay on delivery</option>
+                <option value="bank_transfer">Bank transfer</option>
+              </select>
+            </label>
+
+            <label>
+              Additional notes (optional)
+              <textarea
+                name="notes"
+                value={form.notes}
+                onChange={updateField}
+                rows={3}
+                placeholder="Any extra delivery instructions?"
+              />
+            </label>
+
+            {error && <p className="form-error">{error}</p>}
+
+            <button
+              className="btn btn-primary checkout-submit"
+              type="submit"
+              disabled={submitting}
+            >
+              {submitting ? 'Submitting order...' : 'Place order'}
+              {!submitting && <ArrowRight size={17} />}
+            </button>
+
+            <p className="checkout-help">
+              Need assistance?{' '}
+              <a
+                href={`https://wa.me/${WHATSAPP_NUMBER}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Contact us on WhatsApp
+              </a>
+            </p>
+          </form>
+
+          <aside className="order-summary">
+            <h2>Your order</h2>
+
+            {items.map((item) => (
+              <div className="checkout-summary-item" key={item.id}>
+                <span>
+                  {getProductName(item)} × {item.quantity || 1}
+                </span>
+                <strong>
+                  {formatPrice(
+                    getProductPrice(item) * Number(item.quantity || 1)
+                  )}
+                </strong>
+              </div>
+            ))}
+
+            <div className="summary-row">
+              <span>Subtotal</span>
+              <strong>{formatPrice(subtotal)}</strong>
+            </div>
+
+            <p className="summary-note">
+              Delivery charges and final payment arrangements will be confirmed
+              with you.
+            </p>
+          </aside>
+        </div>
+      </main>
+
+      <Footer />
+    </>
+  );
+}
+
+function NotFoundPage() {
+  return (
+    <>
+      <main className="state-container not-found-page">
+        <h1>Page not found</h1>
+        <p>The page you are looking for does not exist.</p>
+        <Link to="/" className="btn btn-primary">
+          Return to home <ArrowRight size={17} />
+        </Link>
+      </main>
+      <Footer />
+    </>
+  );
+}
+
+function StoreLayout() {
+  return (
+    <>
+      <Header />
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/product/:productId" element={<ProductPage />} />
+        <Route path="/cart" element={<CartPage />} />
+        <Route path="/checkout" element={<CheckoutPage />} />
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
+    </>
+  );
+}
+
+export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<Storefront />} />
-      <Route path="/admin" element={<Admin />} />
-      <Route path="/admin/dashboard" element={<Navigate to="/admin" replace />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="/admin/*" element={<Admin />} />
+      <Route path="/*" element={<StoreLayout />} />
     </Routes>
   );
 }
-
-export default App;

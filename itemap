@@ -1,0 +1,14 @@
+[1mdiff --git a/public/sitemap.xml b/public/sitemap.xml[m
+[1mindex 3ff8b1a..7d1615d 100644[m
+[1m--- a/public/sitemap.xml[m
+[1m+++ b/public/sitemap.xml[m
+[36m@@ -1,6 +1,6 @@[m
+ <?xml version="1.0" encoding="UTF-8"?>[m
+ <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">[m
+[31m-<url>[m
+[31m-<loc>https://voltbridgetechnologies.com/</loc>[m
+[31m-</url>[m
+[32m+[m[32m  <url>[m
+[32m+[m[32m    <loc>https://voltbridgetechnologies.com/</loc>[m
+[32m+[m[32m  </url>[m
+ </urlset>[m
