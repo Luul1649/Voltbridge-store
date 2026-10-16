@@ -13,6 +13,7 @@ import {
   Routes,
   useNavigate,
   useParams,
+  useLocation,
 } from "react-router-dom";
 
 import {
@@ -38,6 +39,19 @@ import Admin from "./Admin";
 import "./App.css";
 
 const WHATSAPP_NUMBER = "254726147462";
+const SITE_URL = "https://voltbridgetechnologies.com";
+
+const HOME_TITLE =
+  "Phone Accessories in Nairobi, Kenya | VoltBridge Technologies";
+
+const HOME_DESCRIPTION =
+  "Shop phone accessories in Nairobi, Kenya, at VoltBridge Technologies. Explore chargers, cables, phone cases, power banks, earbuds and more. Retail and wholesale enquiries welcome.";
+
+const HOME_OG_DESCRIPTION =
+  "Explore phone chargers, cables, cases, power banks and more at VoltBridge Technologies in Nairobi. Retail and wholesale enquiries welcome.";
+
+const HOME_TWITTER_DESCRIPTION =
+  "Shop phone accessories in Nairobi, Kenya. Explore chargers, cables, phone cases, power banks and more.";
 
 const CATEGORIES = [
   "All",
@@ -120,10 +134,208 @@ function getProductImage(product) {
   );
 }
 
+function getAbsoluteImageUrl(product) {
+  const image = getProductImage(product);
+
+  if (!image || image === "/placeholder-product.png") {
+    return null;
+  }
+
+  try {
+    return new URL(image, `${SITE_URL}/`).href;
+  } catch {
+    return null;
+  }
+}
+
 function makeWhatsAppUrl(message) {
   return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(
     message
   )}`;
+}
+
+/**
+ * Update or create a meta tag.
+ */
+function setMeta(attribute, key, content) {
+  let element = document.head.querySelector(
+    `meta[${attribute}="${key}"]`
+  );
+
+  if (!element) {
+    element = document.createElement("meta");
+    element.setAttribute(attribute, key);
+    document.head.appendChild(element);
+  }
+
+  element.setAttribute("content", content);
+}
+
+/**
+ * Update the canonical URL.
+ */
+function setCanonical(url) {
+  let canonical = document.head.querySelector(
+    'link[rel="canonical"]'
+  );
+
+  if (!canonical) {
+    canonical = document.createElement("link");
+    canonical.setAttribute("rel", "canonical");
+    document.head.appendChild(canonical);
+  }
+
+  canonical.setAttribute("href", url);
+}
+
+/**
+ * Restore the default site metadata.
+ */
+function restoreHomeMetadata() {
+  document.title = HOME_TITLE;
+
+  setMeta("name", "description", HOME_DESCRIPTION);
+  setMeta("name", "robots", "index, follow");
+
+  setMeta("property", "og:type", "website");
+  setMeta("property", "og:site_name", "VoltBridge Technologies");
+  setMeta("property", "og:title", HOME_TITLE);
+  setMeta("property", "og:description", HOME_OG_DESCRIPTION);
+  setMeta("property", "og:url", `${SITE_URL}/`);
+
+  setMeta("name", "twitter:card", "summary");
+  setMeta("name", "twitter:title", HOME_TITLE);
+  setMeta(
+    "name",
+    "twitter:description",
+    HOME_TWITTER_DESCRIPTION
+  );
+
+  setCanonical(`${SITE_URL}/`);
+}
+
+/**
+ * Update the SEO metadata for an individual product.
+ */
+function updateProductMetadata(product) {
+  const productUrl = `${SITE_URL}/product/${product.id}`;
+  const productName = String(
+    product.name || "Phone Accessory"
+  ).trim();
+
+  const title =
+    `${productName} in Nairobi, Kenya | VoltBridge Technologies`;
+
+  const descriptionSource =
+    product.description ||
+    `Shop ${productName} at VoltBridge Technologies in Nairobi, Kenya. Contact us for product availability and orders.`;
+
+  const description = String(descriptionSource)
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 155);
+
+  const imageUrl = getAbsoluteImageUrl(product);
+
+  document.title = title;
+
+  setMeta("name", "description", description);
+  setMeta("name", "robots", "index, follow");
+
+  setMeta("property", "og:type", "product");
+  setMeta("property", "og:site_name", "VoltBridge Technologies");
+  setMeta("property", "og:title", title);
+  setMeta("property", "og:description", description);
+  setMeta("property", "og:url", productUrl);
+
+  if (imageUrl) {
+    setMeta("property", "og:image", imageUrl);
+    setMeta("name", "twitter:image", imageUrl);
+  }
+
+  setMeta("name", "twitter:card", "summary_large_image");
+  setMeta("name", "twitter:title", title);
+  setMeta("name", "twitter:description", description);
+
+  setCanonical(productUrl);
+}
+
+/**
+ * Create or update Product JSON-LD structured data.
+ *
+ * The schema uses the actual product data loaded from Supabase.
+ * Price reflects the active sale price when one exists.
+ * Availability uses the same logic as the storefront.
+ */
+function updateProductStructuredData(product) {
+  if (!product?.id || !product?.name) {
+    removeProductStructuredData();
+    return;
+  }
+
+  const productUrl = `${SITE_URL}/product/${product.id}`;
+  const imageUrl = getAbsoluteImageUrl(product);
+  const price = getProductPrice(product);
+  const available = isAvailable(product);
+
+  const description = String(
+    product.description ||
+      `Shop ${product.name} at VoltBridge Technologies in Nairobi, Kenya.`
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    "@id": `${productUrl}#product`,
+    name: String(product.name).trim(),
+    description,
+    url: productUrl,
+    brand: {
+      "@type": "Brand",
+      name: "VoltBridge Technologies",
+    },
+    ...(product.category
+      ? { category: String(product.category) }
+      : {}),
+    ...(imageUrl ? { image: [imageUrl] } : {}),
+    offers: {
+      "@type": "Offer",
+      url: productUrl,
+      priceCurrency: "KES",
+      ...(Number.isFinite(price) && price >= 0
+        ? { price: price.toFixed(2) }
+        : {}),
+      availability: available
+        ? "https://schema.org/InStock"
+        : "https://schema.org/OutOfStock",
+      itemCondition: "https://schema.org/NewCondition",
+      seller: {
+        "@type": "Organization",
+        name: "VoltBridge Technologies",
+        url: SITE_URL,
+      },
+    },
+  };
+
+  let script = document.getElementById("product-jsonld");
+
+  if (!script) {
+    script = document.createElement("script");
+    script.id = "product-jsonld";
+    script.type = "application/ld+json";
+    document.head.appendChild(script);
+  }
+
+  script.textContent = JSON.stringify(structuredData);
+}
+
+/**
+ * Remove product JSON-LD when leaving the product page.
+ */
+function removeProductStructuredData() {
+  document.getElementById("product-jsonld")?.remove();
 }
 
 function Availability({ product }) {
@@ -324,11 +536,22 @@ function ProductCard({ product }) {
 }
 
 function HomePage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const orderPlaced = location.state?.orderPlaced;
+  const orderNumber = location.state?.orderNumber;
+
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
+
+  useEffect(() => {
+    removeProductStructuredData();
+    restoreHomeMetadata();
+  }, []);
 
   const loadProducts = useCallback(async () => {
     setLoading(true);
@@ -386,6 +609,33 @@ function HomePage() {
 
   return (
     <>
+      {orderPlaced && (
+        <section className="container page-state" role="status">
+          <ShieldCheck size={35} />
+          <h2>Order submitted successfully!</h2>
+
+          {orderNumber && (
+            <p>Your order reference is: {orderNumber}</p>
+          )}
+
+          <p>
+            Your order is pending confirmation. Payment has not been
+            verified by this website. Please follow the instructions
+            provided by VoltBridge Technologies.
+          </p>
+
+          <button
+            type="button"
+            className="button button-primary"
+            onClick={() => {
+              navigate("/", { replace: true, state: null });
+            }}
+          >
+            Continue shopping
+          </button>
+        </section>
+      )}
+
       <section className="hero">
         <div className="container hero-content">
           <div className="hero-copy">
@@ -562,6 +812,7 @@ function HomePage() {
 function ProductDetailPage() {
   const { productId } = useParams();
   const { addToCart } = useCart();
+
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -572,6 +823,7 @@ function ProductDetailPage() {
     async function loadProduct() {
       setLoading(true);
       setError("");
+      setProduct(null);
 
       try {
         if (!supabase) {
@@ -590,13 +842,17 @@ function ProductDetailPage() {
           throw new Error("This product is not currently available.");
         }
 
-        if (!cancelled) setProduct(data);
+        if (!cancelled) {
+          setProduct(data);
+        }
       } catch (err) {
         if (!cancelled) {
           setError(err?.message || "Could not load this product.");
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
 
@@ -606,6 +862,19 @@ function ProductDetailPage() {
       cancelled = true;
     };
   }, [productId]);
+
+  // Update product metadata and structured data after loading.
+  useEffect(() => {
+    if (!product) return undefined;
+
+    updateProductMetadata(product);
+    updateProductStructuredData(product);
+
+    return () => {
+      removeProductStructuredData();
+      restoreHomeMetadata();
+    };
+  }, [product]);
 
   if (loading) {
     return (
@@ -641,7 +910,13 @@ function ProductDetailPage() {
 
       <div className="product-detail">
         <div className="product-detail-image">
-          <img src={getProductImage(product)} alt={product.name} />
+          <img
+            src={getProductImage(product)}
+            alt={product.name}
+            onError={(event) => {
+              event.currentTarget.style.display = "none";
+            }}
+          />
           {onSale && <span className="sale-badge">SALE</span>}
         </div>
 
@@ -913,7 +1188,9 @@ function CheckoutPage() {
             )}`
         ),
         "",
-        `Order subtotal: ${money(cartTotal)}`,
+        `Order subtotal: ${money(
+          Number(data?.subtotal ?? cartTotal)
+        )}`,
         form.notes.trim() ? `Notes: ${form.notes.trim()}` : "",
       ]
         .filter(Boolean)
