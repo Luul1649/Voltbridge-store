@@ -1187,7 +1187,7 @@ export default function Admin() {
                   <tr>
                     <th>Product</th>
                     <th>Price</th>
-                    <th>Stock</th>
+                    <th>Stock quantity (admin)</th>
                     <th>Store status</th>
                     <th>Actions</th>
                   </tr>
